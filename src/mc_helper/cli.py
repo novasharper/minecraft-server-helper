@@ -1,6 +1,8 @@
 import argparse
 import sys
 
+from mc_helper.config import load_config
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(
@@ -40,8 +42,13 @@ def main() -> None:
 
 
 def _cmd_validate(args: argparse.Namespace) -> None:
-    print(f"validate: {args.config} (not yet implemented)")
-    sys.exit(1)
+    try:
+        config = load_config(args.config)
+    except Exception as exc:
+        print(f"Invalid config: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+    print(f"OK — server type={config.server.type}, mc={config.server.minecraft_version}")
 
 
 def _cmd_setup(args: argparse.Namespace) -> None:

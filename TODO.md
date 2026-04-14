@@ -6,12 +6,12 @@
 - [x] Create `tests/` directory with empty `conftest.py`
 - [x] Create annotated `example-config.yaml` covering all three scenarios (vanilla, modpack, mods)
 
-## Phase 2: Configuration Layer
-- [ ] Implement Pydantic v2 models in `config.py`: `ServerConfig`, `ModpackConfig`, `ModsConfig`, `RootConfig`
-- [ ] Add `${VAR}` env-var interpolation in YAML loader (runs before Pydantic validation)
-- [ ] Add model validator: enforce only one of `modpack` / `mods` is set
-- [ ] Implement `mc-helper validate` subcommand
-- [ ] Write `tests/test_config.py` (valid configs, mutual exclusion, env interpolation)
+## Phase 2: Configuration Layer ✓
+- [x] Implement Pydantic v2 models in `config.py`: `ServerConfig`, `ModpackConfig`, `ModsConfig`, `ServerPackConfig`, `RootConfig`
+- [x] Add `${VAR}` env-var interpolation in YAML loader (runs before Pydantic validation)
+- [x] Add model validator: enforce exactly one of `modpack` / `mods` / `server_pack` is set
+- [x] Implement `mc-helper validate` subcommand
+- [x] Write `tests/test_config.py` (valid configs, mutual exclusion, env interpolation) — 28 tests
 
 ## Phase 3: Shared Infrastructure
 - [ ] Implement `http_client.py`: `requests.Session` with Retry (5 attempts, exponential backoff), User-Agent header, `download_file()` with tqdm progress
@@ -58,8 +58,8 @@
 - [ ] Write `tests/test_modrinth.py` (mock API + ZIP)
 
 ## Phase 5.5: Server Pack Installer
-- [ ] Add `ServerPackConfig` Pydantic model to `config.py` (`url` XOR `github`+`tag`+`asset`+`token`, plus `strip_components`, `disable_mods`, `force_update`)
-- [ ] Extend `RootConfig` validator: enforce mutual exclusivity of `modpack`, `mods`, `server_pack`
+- [x] Add `ServerPackConfig` Pydantic model to `config.py` — done in Phase 2
+- [x] Extend `RootConfig` validator: enforce mutual exclusivity of `modpack`, `mods`, `server_pack` — done in Phase 2
 - [ ] `pack/server_pack.py`:
   - GitHub release resolution: GET `https://api.github.com/repos/{owner}/{repo}/releases/latest` (or `/releases/tags/{tag}`) → glob-match `assets[].name` → download `browser_download_url`
     - Reference: `mc-image-helper` `github` subcommand family in `McImageHelper.java`
