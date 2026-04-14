@@ -13,11 +13,11 @@
 - [x] Implement `mc-helper validate` subcommand
 - [x] Write `tests/test_config.py` (valid configs, mutual exclusion, env interpolation) — 28 tests
 
-## Phase 3: Shared Infrastructure
-- [ ] Implement `http_client.py`: `requests.Session` with Retry (5 attempts, exponential backoff), User-Agent header, `download_file()` with tqdm progress
-- [ ] Implement `manifest.py`: load/save `.mc-helper-manifest.json`; `files_changed()`, `cleanup_stale()` helpers
-- [ ] Implement `utils.py`: `compare_versions()`, `cleanup_stale()`, glob-based file deletion
-- [ ] Write `tests/test_manifest.py`
+## Phase 3: Shared Infrastructure ✓
+- [x] Implement `http_client.py`: `requests.Session` with Retry (5 attempts, exponential backoff), User-Agent header, `download_file()` with tqdm progress + SHA-1/SHA-256 verification
+- [x] Implement `manifest.py`: load/save `.mc-helper-manifest.json`; `files_changed()`, `cleanup_stale()` helpers
+- [x] Implement `utils.py`: `compare_versions()`, `glob_delete()`, `find_content_root()`, `disable_mods()`
+- [x] Write `tests/test_manifest.py` — 16 tests
 
 ## Phase 4: Server JAR Installers
 - [ ] `server/vanilla.py` — Mojang launcher manifest → version resolution → JAR download + SHA-1 verify
