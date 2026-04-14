@@ -1,0 +1,211 @@
+"""Modrinth modpack installer.
+
+Reference: mc-image-helper/.../modrinth/ModrinthPackInstaller.java
+Reference: mc-image-helper/.../modrinth/ModrinthApiPackFetcher.java
+Reference: mc-image-helper/.../modrinth/model/ModpackIndex.java
+Reference: docker-minecraft-server/scripts/start-deployModrinth
+API base: https://api.modrinth.com/v2
+
+Workflow:
+  1. Resolve project version via /v2/project/{id}/versions
+  2. Download .mrpack (ZIP)
+  3. Parse modrinth.index.json: dependencies (loader), files[]
+  4. Skip files where env.server == "unsupported"
+  5. Download files to output_dir/<path>
+  6. Extract overrides/ and server-overrides/ into output_dir
+  7. Auto-install mod loader based on dependencies
+  8. Cleanup stale files, save manifest
+"""
+
+import fnmatch
+import io
+import json
+import zipfile
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from pathlib import Path
+
+import requests
+
+from mc_helper.http_client import build_session, download_file
+from mc_helper.manifest import Manifest
+
+_API_BASE = "https://api.modrinth.com/v2"
+_MAX_WORKERS = 10
+
+
+def _get_json(session: requests.Session, url: str) -> object:
+    resp = session.get(url, timeout=30)
+    resp.raise_for_status()
+    return resp.json()
+
+
+def resolve_version(
+    session: requests.Session,
+    project: str,
+    minecraft_version: str | None,
+    loader: str | None,
+    version_type: str = "release",
+    requested_version: str = "LATEST",
+) -> dict:
+    """Return the best matching version object for the project."""
+    if requested_version and requested_version.upper() != "LATEST":
+        # Specific version number or ID — try direct lookup first
+        versions = _get_json(session, f"{_API_BASE}/project/{project}/versions")
+        for v in versions:
+            if v["version_number"] == requested_version or v["id"] == requested_version:
+                return v
+        raise ValueError(f"Modrinth version '{requested_version}' not found for project '{project}'")
+
+    params: list[str] = []
+    if minecraft_version:
+        params.append(f"game_versions=[\"{minecraft_version}\"]")
+    if loader:
+        params.append(f"loaders=[\"{loader}\"]")
+    query = "&".join(params)
+    url = f"{_API_BASE}/project/{project}/versions"
+    if query:
+        url += f"?{query}"
+
+    versions = _get_json(session, url)
+    if not versions:
+        raise ValueError(
+            f"No Modrinth versions found for project '{project}' "
+            f"(mc={minecraft_version}, loader={loader})"
+        )
+
+    # Prefer requested version_type, fall back to whatever is available
+    preference = ["release", "beta", "alpha"]
+    if version_type in preference:
+        preference = [version_type] + [t for t in preference if t != version_type]
+
+    for vtype in preference:
+        for v in versions:
+            if v.get("version_type") == vtype:
+                return v
+
+    return versions[0]
+
+
+def _mrpack_url(version: dict) -> str:
+    """Pick the primary .mrpack file from a version object."""
+    for f in version.get("files", []):
+        if f.get("primary"):
+            return f["url"]
+    # Fall back to first file
+    return version["files"][0]["url"]
+
+
+def _should_include(file_entry: dict, exclusions: list[str]) -> bool:
+    """Return True if the modpack file should be installed server-side."""
+    env = file_entry.get("env", {})
+    if env.get("server") == "unsupported":
+        return False
+    path = file_entry.get("path", "")
+    for pattern in exclusions:
+        if fnmatch.fnmatch(Path(path).name, pattern):
+            return False
+    return True
+
+
+def _extract_overrides(zf: zipfile.ZipFile, output_dir: Path, exclusions: list[str]) -> list[str]:
+    """Extract overrides/ and server-overrides/ into output_dir. Returns relative paths."""
+    extracted: list[str] = []
+    for prefix in ("overrides/", "server-overrides/"):
+        for name in zf.namelist():
+            if not name.startswith(prefix) or name == prefix:
+                continue
+            rel = name[len(prefix):]
+            if not rel:
+                continue
+            if any(fnmatch.fnmatch(rel, pat) for pat in exclusions):
+                continue
+            dest = output_dir / rel
+            if name.endswith("/"):
+                dest.mkdir(parents=True, exist_ok=True)
+            else:
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                dest.write_bytes(zf.read(name))
+                extracted.append(rel)
+    return extracted
+
+
+def install(
+    project: str,
+    output_dir: Path,
+    minecraft_version: str | None = None,
+    loader: str | None = None,
+    version_type: str = "release",
+    requested_version: str = "LATEST",
+    exclude_mods: list[str] | None = None,
+    overrides_exclusions: list[str] | None = None,
+    session: requests.Session | None = None,
+    show_progress: bool = True,
+) -> dict:
+    """Install a Modrinth modpack into output_dir.
+
+    Returns the index dict (modrinth.index.json contents).
+    """
+    if session is None:
+        session = build_session()
+    exclude_mods = exclude_mods or []
+    overrides_exclusions = overrides_exclusions or []
+
+    manifest = Manifest(output_dir)
+    manifest.load()
+
+    # 1. Resolve version
+    version = resolve_version(
+        session, project, minecraft_version, loader, version_type, requested_version
+    )
+    mrpack_url = _mrpack_url(version)
+
+    # 2. Download .mrpack to a temp file
+    tmp_mrpack = output_dir / ".mc-helper-mrpack.tmp"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    download_file(mrpack_url, tmp_mrpack, session=session, show_progress=show_progress)
+
+    try:
+        with zipfile.ZipFile(tmp_mrpack) as zf:
+            # 3. Parse modrinth.index.json
+            index = json.loads(zf.read("modrinth.index.json"))
+
+            # 4+5. Download modpack files (parallel)
+            files_to_install = [
+                f for f in index.get("files", [])
+                if _should_include(f, exclude_mods)
+            ]
+            new_files: list[str] = []
+
+            def _download_entry(entry: dict) -> str:
+                rel_path = entry["path"]
+                dest = output_dir / rel_path
+                url = entry["downloads"][0]
+                sha1 = entry.get("hashes", {}).get("sha1")
+                download_file(url, dest, session=session, expected_sha1=sha1, show_progress=False)
+                return rel_path
+
+            with ThreadPoolExecutor(max_workers=_MAX_WORKERS) as pool:
+                futures = {pool.submit(_download_entry, f): f for f in files_to_install}
+                for fut in as_completed(futures):
+                    new_files.append(fut.result())
+
+            # 6. Extract overrides
+            override_files = _extract_overrides(zf, output_dir, overrides_exclusions)
+            new_files.extend(override_files)
+
+        # 8. Cleanup stale + save manifest
+        manifest.cleanup_stale(output_dir, new_files)
+        manifest.files = new_files
+        deps = index.get("dependencies", {})
+        manifest.mc_version = deps.get("minecraft", minecraft_version)
+        for loader_key in ("fabric-loader", "quilt-loader", "forge", "neoforge"):
+            if loader_key in deps:
+                manifest.loader_type = loader_key
+                manifest.loader_version = deps[loader_key]
+                break
+        manifest.save()
+
+    finally:
+        tmp_mrpack.unlink(missing_ok=True)
+
+    return index

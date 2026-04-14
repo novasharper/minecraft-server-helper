@@ -28,42 +28,19 @@
 - [x] `server/purpur.py` — Purpur API → JAR download
 - [x] Write `tests/test_vanilla.py` — 8 tests (mock HTTP responses)
 
-## Phase 5: Modpack Installers
-- [ ] `modpack/curseforge.py` — full install workflow
-  - Slug/file-ID resolution via CurseForge API (`/v1/mods/search`, `/v1/mods/{id}/files`)
-  - ZIP download → `manifest.json` parse → per-file API lookup + download
-  - Exclude/force-include lists (mirrors `cf-exclude-include.json` schema in `docker-minecraft-server/files/`)
-  - Overrides extraction, mod loader auto-install, stale cleanup
-  - Reference: `mc-image-helper/.../curseforge/CurseForgeInstaller.java`, `CurseForgeApiClient.java`
-  - Reference: `docker-minecraft-server/scripts/start-deployAutoCF`
-- [ ] `modpack/modrinth.py` — full install workflow
-  - Project/version resolution via Modrinth API (`/v2/project/{id}`, `/v2/project/{id}/versions`)
-  - `.mrpack` ZIP → `modrinth.index.json` parse → file download (skip `env.server == "unsupported"`)
-  - `overrides/` + `server-overrides/` extraction, loader auto-install, stale cleanup
-  - Reference: `mc-image-helper/.../modrinth/ModrinthPackInstaller.java`, `ModpackIndex.java`
-  - Reference: `docker-minecraft-server/scripts/start-deployModrinth`
-- [ ] Write `tests/test_curseforge.py` (mock API + ZIP)
-- [ ] Write `tests/test_modrinth.py` (mock API + ZIP)
+## Phase 5: Modpack Installers ✓
+- [x] `modpack/curseforge.py` — slug/file-ID resolution, ZIP download, manifest.json parse, parallel mod downloads, overrides extraction, stale cleanup, manifest save
+- [x] `modpack/modrinth.py` — version resolution, .mrpack download, modrinth.index.json parse, skip env.server==unsupported, parallel downloads, overrides/server-overrides extraction, stale cleanup, manifest save
+- [x] Write `tests/test_curseforge.py` — 11 tests (mock API + ZIP)
+- [x] Write `tests/test_modrinth.py` — 12 tests (mock API + ZIP)
 
-## Phase 5.5: Server Pack Installer
+## Phase 5.5: Server Pack Installer ✓
 - [x] Add `ServerPackConfig` Pydantic model to `config.py` — done in Phase 2
 - [x] Extend `RootConfig` validator: enforce mutual exclusivity of `modpack`, `mods`, `server_pack` — done in Phase 2
-- [ ] `pack/server_pack.py`:
-  - GitHub release resolution: GET `https://api.github.com/repos/{owner}/{repo}/releases/latest` (or `/releases/tags/{tag}`) → glob-match `assets[].name` → download `browser_download_url`
-    - Reference: `mc-image-helper` `github` subcommand family in `McImageHelper.java`
-  - Direct URL: pass to `http_client.download_file()`
-  - Format detection from filename: `.zip` → `zipfile`, `.tar.gz`/`.tgz` → `tarfile`
-  - `strip_components`: skip N leading path segments per entry during extraction
-    - Reference: `easy-add/main.go` `processTarGz` / `processZip`
-  - Content-root auto-detection: find shallowest extracted dir containing `mods/`, `plugins/`, `config/`, or `*.jar`
-    - Reference: `docker-minecraft-server/scripts/start-setupModpack` lines 213–220 (`mc-image-helper find --only-shallowest`)
-  - SHA-1 checksum of archive stored in manifest; skip re-extraction if unchanged and `force_update` is false
-    - Reference: `docker-minecraft-server/scripts/start-setupModpack` lines 189–243 (`checkSum` / `sha1sum`)
-  - `disable_mods`: rename matched filenames to `*.disabled` post-extraction
-    - Reference: `docker-minecraft-server/scripts/start-setupModpack` lines 204–207 (`GENERIC_PACKS_DISABLE_MODS`)
+- [x] `pack/server_pack.py`: GitHub release resolution, direct URL, format detection, strip_components, content-root auto-detection, SHA-1 idempotency, disable_mods rename
 - [ ] Update `mc-helper setup` dispatch in `cli.py` to handle `server_pack` config
 - [x] Update `example-config.yaml` with `server_pack` examples (direct URL and GitHub) — done in Phase 1
-- [ ] Write `tests/test_server_pack.py` (mock HTTP, mock GitHub API, mock ZIP + tar.gz extraction)
+- [x] Write `tests/test_server_pack.py` — 18 tests (mock HTTP, GitHub API, ZIP + tar.gz)
 
 ## Phase 6: Individual Mod Installers
 - [ ] `mods/modrinth.py` — resolve slug/ID/version → download JAR

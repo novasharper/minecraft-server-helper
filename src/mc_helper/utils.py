@@ -51,25 +51,28 @@ def glob_delete(directory: Path, patterns: list[str]) -> list[Path]:
 def find_content_root(base: Path, markers: list[str] | None = None) -> Path:
     """Find the shallowest directory under *base* that looks like a server root.
 
-    A directory qualifies if it contains any of the *markers* (directory names
-    or glob patterns). Defaults to ``["mods", "plugins", "config", "*.jar"]``.
+    Mirrors the reference behaviour of ``mc-image-helper find --only-shallowest``
+    which finds directories named ``mods``, ``plugins``, or ``config`` and returns
+    their *parent* as the content root.
+
+    *markers* is a list of subdirectory names whose presence indicates a server
+    root. Defaults to ``["mods", "plugins", "config"]``.
 
     Returns *base* itself if no qualifying subdirectory is found.
     """
     if markers is None:
-        markers = ["mods", "plugins", "config", "*.jar"]
+        markers = ["mods", "plugins", "config"]
 
-    def _qualifies(d: Path) -> bool:
-        for marker in markers:
-            if any(True for _ in d.glob(marker)):
-                return True
-        return False
+    # Collect the parent of every marker directory found, then pick the shallowest.
+    parents: list[Path] = []
+    for marker in markers:
+        for match in base.rglob(marker):
+            if match.is_dir():
+                parents.append(match.parent)
 
-    # BFS by depth so we return the shallowest match
-    candidates = sorted(base.rglob("*/"), key=lambda p: len(p.parts))
-    for candidate in candidates:
-        if candidate.is_dir() and _qualifies(candidate):
-            return candidate
+    if parents:
+        parents.sort(key=lambda p: len(p.parts))
+        return parents[0]
 
     return base
 
