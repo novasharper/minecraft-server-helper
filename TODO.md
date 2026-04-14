@@ -19,26 +19,14 @@
 - [x] Implement `utils.py`: `compare_versions()`, `glob_delete()`, `find_content_root()`, `disable_mods()`
 - [x] Write `tests/test_manifest.py` — 16 tests
 
-## Phase 4: Server JAR Installers
-- [ ] `server/vanilla.py` — Mojang launcher manifest → version resolution → JAR download + SHA-1 verify
-  - API: `https://launchermeta.mojang.com/mc/game/version_manifest.json`
-  - Reference: `docker-minecraft-server/scripts/start-deployVanilla`
-- [ ] `server/fabric.py` — Fabric Meta API → launcher JAR download
-  - API: `https://meta.fabricmc.net`
-  - Reference: `mc-image-helper/.../fabric/FabricMetaClient.java`, `FabricLauncherInstaller.java`
-- [ ] `server/forge.py` — Forge installer JAR download + `java -jar ... --installServer` subprocess
-  - Reference: `mc-image-helper/.../forge/ForgeLikeInstaller.java`, `ForgeInstallerResolver.java`
-  - Reference: `docker-minecraft-server/scripts/start-deployForge`
-- [ ] `server/neoforge.py` — same pattern as forge.py
-  - Reference: `mc-image-helper/.../forge/NeoForgeInstallerResolver.java`
-  - Reference: `docker-minecraft-server/scripts/start-deployNeoForge`
-- [ ] `server/paper.py` — PaperMC Downloads API → JAR + SHA-256 verify
-  - API: `https://fill.papermc.io`
-  - Reference: `mc-image-helper/.../paper/PaperDownloadsClient.java`, `InstallPaperCommand.java`
-- [ ] `server/purpur.py` — Purpur API → JAR download
-  - API: `https://api.purpurmc.org`
-  - Reference: `mc-image-helper/.../purpur/PurpurDownloadsClient.java`
-- [ ] Write `tests/test_vanilla.py` (mock HTTP responses)
+## Phase 4: Server JAR Installers ✓
+- [x] `server/vanilla.py` — Mojang launcher manifest → version resolution → JAR download + SHA-1 verify
+- [x] `server/fabric.py` — Fabric Meta API → launcher JAR download
+- [x] `server/forge.py` — Forge installer JAR download + `java -jar ... --installServer` subprocess
+- [x] `server/neoforge.py` — Maven metadata resolution, forge-like vs neoforge artifact handling, `--installServer`
+- [x] `server/paper.py` — PaperMC Fill API v3 → JAR + SHA-256 verify
+- [x] `server/purpur.py` — Purpur API → JAR download
+- [x] Write `tests/test_vanilla.py` — 8 tests (mock HTTP responses)
 
 ## Phase 5: Modpack Installers
 - [ ] `modpack/curseforge.py` — full install workflow
