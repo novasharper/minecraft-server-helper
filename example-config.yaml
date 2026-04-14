@@ -1,0 +1,66 @@
+# example-config.yaml — annotated reference covering all three modes.
+# Exactly ONE of `modpack`, `mods`, or `server_pack` must be present.
+
+server:
+  type: fabric                  # vanilla | forge | neoforge | fabric | quilt | paper | purpur
+  minecraft_version: "1.21.1"   # specific version, LATEST, or SNAPSHOT
+  loader_version: LATEST        # fabric/forge/neoforge/quilt only; ignored for vanilla/paper/purpur
+  output_dir: ./server
+  eula: true
+  memory: 2G
+  properties:                   # written verbatim to server.properties
+    difficulty: normal
+    max_players: 20
+    motd: "A Minecraft Server"
+    online_mode: true
+
+# ── Option A: Install a modpack ───────────────────────────────────────────────
+modpack:
+  platform: modrinth            # modrinth | curseforge
+
+  # Modrinth fields
+  project: "better-mc-fabric"   # slug, project ID, page URL, or local .mrpack path
+  version: LATEST
+  version_type: release         # release | beta | alpha
+
+  # CurseForge fields (requires CF_API_KEY)
+  api_key: ${CF_API_KEY}
+  slug: "all-the-mods-9"
+  file_id: ~                    # null = newest matching file
+  filename_matcher: ~           # optional substring filter on filename
+
+  # Shared
+  exclude_mods: []              # slugs/IDs to skip
+  force_include_mods: []        # slugs/IDs to always include even if filtered
+  overrides_exclusions: []      # paths inside overrides/ to skip
+
+# ── Option B: Install individual mods ────────────────────────────────────────
+# mods:
+#   modrinth:
+#     - fabric-api                # slug → latest release for mc_version + loader
+#     - "sodium:mc1.21-0.6.0"    # slug:version
+#     - "P7dR8mSH"               # project ID
+#   curseforge:
+#     api_key: ${CF_API_KEY}
+#     files:
+#       - jei                     # slug → latest file
+#       - "jei:4593548"           # slug:fileId
+#       - "238222"                # project ID
+#   urls:
+#     - https://example.com/mymod-1.0.jar
+
+# ── Option C: Install a pre-assembled server pack ─────────────────────────────
+# server_pack:
+#   # Option C-1: direct URL
+#   url: https://example.com/mypack-server.zip
+#
+#   # Option C-2: GitHub release asset
+#   github: "ATM-Team/ATM-10"   # owner/repo
+#   tag: LATEST                 # specific tag or LATEST
+#   asset: "*server*"           # glob to select asset; picks first if omitted
+#   token: ${GITHUB_TOKEN}      # optional, for private repos
+#
+#   # Shared options
+#   strip_components: 1         # strip N leading path segments (like tar --strip-components)
+#   disable_mods: []            # rename matched filenames to *.disabled after extraction
+#   force_update: false         # re-extract even if checksum matches

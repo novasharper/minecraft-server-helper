@@ -1,0 +1,36 @@
+[project]
+name = "mc-helper"
+version = "0.1.0"
+description = "Standalone CLI to prepare a Minecraft server directory without Docker"
+authors = [{name = "Pat Long", email = "pat@novasharper.net"}]
+license = "Apache-2.0"
+requires-python = ">=3.11"
+
+[project.scripts]
+mc-helper = "mc_helper.cli:main"
+
+[tool.poetry]
+packages = [{include = "mc_helper", from = "src"}]
+
+[tool.poetry.dependencies]
+python = "^3.11"
+pydantic = "~2.9"
+PyYAML = "~6.0"
+requests = "~2.32"
+tqdm = "~4.66"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "~8.3"
+pytest-mock = "~3.14"
+responses = "~0.25"
+ruff = "~0.7"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]

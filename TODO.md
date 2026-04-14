@@ -1,10 +1,10 @@
 # minecraft-server-helper — TODO
 
-## Phase 1: Project Scaffold
-- [ ] Create `pyproject.toml` (Poetry) with dependencies (pydantic, PyYAML, requests, tqdm) and `mc-helper` entry point
-- [ ] Create `src/mc_helper/__init__.py`, `cli.py` (stub), `config.py` (stub)
-- [ ] Create `tests/` directory with empty `conftest.py`
-- [ ] Create annotated `example-config.yaml` covering all three scenarios (vanilla, modpack, mods)
+## Phase 1: Project Scaffold ✓
+- [x] Create `pyproject.toml` (Poetry) with dependencies (pydantic, PyYAML, requests, tqdm) and `mc-helper` entry point
+- [x] Create `src/mc_helper/__init__.py`, `cli.py` (stub), `config.py` (stub)
+- [x] Create `tests/` directory with empty `conftest.py`
+- [x] Create annotated `example-config.yaml` covering all three scenarios (vanilla, modpack, mods)
 
 ## Phase 2: Configuration Layer
 - [ ] Implement Pydantic v2 models in `config.py`: `ServerConfig`, `ModpackConfig`, `ModsConfig`, `RootConfig`
@@ -74,7 +74,7 @@
   - `disable_mods`: rename matched filenames to `*.disabled` post-extraction
     - Reference: `docker-minecraft-server/scripts/start-setupModpack` lines 204–207 (`GENERIC_PACKS_DISABLE_MODS`)
 - [ ] Update `mc-helper setup` dispatch in `cli.py` to handle `server_pack` config
-- [ ] Update `example-config.yaml` with `server_pack` examples (direct URL and GitHub)
+- [x] Update `example-config.yaml` with `server_pack` examples (direct URL and GitHub) — done in Phase 1
 - [ ] Write `tests/test_server_pack.py` (mock HTTP, mock GitHub API, mock ZIP + tar.gz extraction)
 
 ## Phase 6: Individual Mod Installers
