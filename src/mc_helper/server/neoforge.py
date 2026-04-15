@@ -80,15 +80,18 @@ class NeoForgeInstaller:
         if not versions:
             raise ValueError(f"No NeoForge versions found for Minecraft {self.minecraft_version}")
 
-        mc_minor = (
-            self.minecraft_version.split(".")[1]
-            if not _use_forge_artifact(self.minecraft_version)
-            else None
-        )
+        # Build version prefix: NeoForge uses "{mc_minor}.{mc_patch}.x" format.
+        # e.g. MC 1.21.1 → NeoForge 21.1.x; MC 1.21 → NeoForge 21.0.x
+        mc_prefix: str | None = None
+        if not _use_forge_artifact(self.minecraft_version):
+            parts = self.minecraft_version.split(".")
+            mc_minor = parts[1] if len(parts) > 1 else "0"
+            mc_patch = parts[2] if len(parts) > 2 else "0"
+            mc_prefix = f"{mc_minor}.{mc_patch}."
 
-        # Filter to versions matching the MC minor series (e.g. 21.1.x for 1.21.1)
-        if mc_minor:
-            matching = [v for v in versions if v.startswith(f"{mc_minor}.")]
+        # Filter to versions matching the exact MC minor+patch series
+        if mc_prefix:
+            matching = [v for v in versions if v.startswith(mc_prefix)]
             if matching:
                 versions = matching
 

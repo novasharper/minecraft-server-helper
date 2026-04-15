@@ -31,6 +31,42 @@ from mc_helper.utils import extract_zip_overrides
 
 _API_BASE = "https://api.modrinth.com/v2"
 _MAX_WORKERS = 10
+_DATA_DIR = Path(__file__).parent.parent / "data"
+
+
+def _load_mr_filter() -> dict:
+    """Load the bundled Modrinth exclude/include filter file."""
+    path = _DATA_DIR / "modrinth-exclude-include.json"
+    if path.exists():
+        return json.loads(path.read_text())
+    return {"globalExcludes": [], "globalForceIncludes": [], "modpacks": {}}
+
+
+def _project_id_from_url(url: str) -> str | None:
+    """Extract the Modrinth project ID from a CDN URL.
+
+    CDN URLs follow the pattern:
+    ``https://cdn.modrinth.com/data/{project_id}/versions/{version_id}/{filename}``
+    """
+    parts = url.split("/")
+    try:
+        idx = parts.index("data")
+        return parts[idx + 1]
+    except (ValueError, IndexError):
+        return None
+
+
+def _resolve_project_slugs(session: requests.Session, project_ids: list[str]) -> dict[str, str]:
+    """Batch-resolve Modrinth project IDs to slugs.
+
+    Returns ``{project_id: slug}``.
+    """
+    if not project_ids:
+        return {}
+    ids_json = json.dumps(project_ids)
+    url = f"{_API_BASE}/projects?ids={ids_json}"
+    data = get_json(session, url)
+    return {item["id"]: item.get("slug", "") for item in data}  # type: ignore[union-attr]
 
 
 def resolve_version(
@@ -91,15 +127,32 @@ def _mrpack_url(version: dict) -> str:
     return version["files"][0]["url"]
 
 
-def _should_include(file_entry: dict, exclusions: list[str]) -> bool:
-    """Return True if the modpack file should be installed server-side."""
-    env = file_entry.get("env", {})
-    if env.get("server") == "unsupported":
+def _should_include(
+    file_entry: dict,
+    exclusions: list[str],
+    excluded_slugs: set[str] | None = None,
+    force_include_slugs: set[str] | None = None,
+    project_slug: str | None = None,
+) -> bool:
+    """Return True if the modpack file should be installed server-side.
+
+    Checks (in order):
+      1. Global slug force-include → always include
+      2. Global slug exclude → skip
+      3. User filename-pattern exclude → skip
+      4. Client-only detection via env.server == "unsupported" → skip
+    """
+    if force_include_slugs and project_slug and project_slug in force_include_slugs:
+        return True
+    if excluded_slugs and project_slug and project_slug in excluded_slugs:
         return False
     path = file_entry.get("path", "")
     for pattern in exclusions:
         if fnmatch.fnmatch(Path(path).name, pattern):
             return False
+    env = file_entry.get("env", {})
+    if env.get("server") == "unsupported":
+        return False
     return True
 
 
@@ -159,9 +212,53 @@ class ModrinthPackInstaller:
                 # 3. Parse modrinth.index.json
                 index = json.loads(zf.read("modrinth.index.json"))
 
+                # G1: load global exclude/include filter and batch-resolve slugs
+                mr_filter = _load_mr_filter()
+                pack_slug = self.project or ""
+                pack_overrides = mr_filter.get("modpacks", {}).get(pack_slug, {})
+
+                global_excluded_slugs: set[str] = set(
+                    s.lower() for s in mr_filter.get("globalExcludes", [])
+                )
+                global_excluded_slugs.update(
+                    s.lower() for s in pack_overrides.get("excludes", [])
+                )
+
+                global_force_include_slugs: set[str] = set(
+                    s.lower() for s in mr_filter.get("globalForceIncludes", [])
+                )
+                global_force_include_slugs.update(
+                    s.lower() for s in pack_overrides.get("forceIncludes", [])
+                )
+
+                # Batch-resolve project IDs to slugs from CDN URLs
+                all_files = index.get("files", [])
+                raw_ids = [
+                    pid
+                    for f in all_files
+                    for url in f.get("downloads", [])[:1]
+                    if (pid := _project_id_from_url(url)) is not None
+                ]
+                unique_ids = list(dict.fromkeys(raw_ids))  # deduplicate, preserve order
+                slug_map = _resolve_project_slugs(self.session, unique_ids)
+                # Build a per-file lookup: url → project_slug
+                file_slug_map: dict[int, str | None] = {}
+                for i, f in enumerate(all_files):
+                    urls = f.get("downloads", [])
+                    pid = _project_id_from_url(urls[0]) if urls else None
+                    file_slug_map[i] = slug_map.get(pid, "").lower() if pid else None
+
                 # 4+5. Download modpack files (parallel)
                 files_to_install = [
-                    f for f in index.get("files", []) if _should_include(f, self.exclude_mods)
+                    (i, f)
+                    for i, f in enumerate(all_files)
+                    if _should_include(
+                        f,
+                        self.exclude_mods,
+                        global_excluded_slugs,
+                        global_force_include_slugs,
+                        file_slug_map.get(i),
+                    )
                 ]
                 new_files: list[str] = []
                 session = self.session
@@ -184,7 +281,7 @@ class ModrinthPackInstaller:
                     return rel_path
 
                 with ThreadPoolExecutor(max_workers=_MAX_WORKERS) as pool:
-                    futures = {pool.submit(_download_entry, f): f for f in files_to_install}
+                    futures = {pool.submit(_download_entry, f): f for _, f in files_to_install}
                     for fut in as_completed(futures):
                         new_files.append(fut.result())
 

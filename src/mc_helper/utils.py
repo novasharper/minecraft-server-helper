@@ -15,6 +15,7 @@ def extract_zip_overrides(
     Files whose relative path matches any *exclusions* glob are skipped.
     Returns the list of extracted relative paths.
     """
+    resolved_root = output_dir.resolve()
     extracted: list[str] = []
     for prefix_name in prefixes:
         prefix = prefix_name.rstrip("/") + "/"
@@ -27,6 +28,11 @@ def extract_zip_overrides(
             if any(fnmatch.fnmatch(rel, pat) for pat in exclusions):
                 continue
             dest = output_dir / rel
+            # Guard against path-traversal entries (e.g. "overrides/../../evil")
+            try:
+                dest.resolve().relative_to(resolved_root)
+            except ValueError:
+                raise ValueError(f"Path traversal detected in ZIP entry: {name!r}")
             if name.endswith("/"):
                 dest.mkdir(parents=True, exist_ok=True)
             else:
@@ -83,12 +89,12 @@ def glob_delete(directory: Path, patterns: list[str]) -> list[Path]:
     return deleted
 
 
-def find_content_root(base: Path, markers: list[str] | None = None) -> Path:
+def find_content_root(base: Path, markers: list[str] | None = None, max_depth: int = 3) -> Path:
     """Find the shallowest directory under *base* that looks like a server root.
 
-    Mirrors the reference behaviour of ``mc-image-helper find --only-shallowest``
-    which finds directories named ``mods``, ``plugins``, or ``config`` and returns
-    their *parent* as the content root.
+    Mirrors the reference behaviour of ``mc-image-helper find --only-shallowest
+    --max-depth=3`` which finds directories named ``mods``, ``plugins``, or
+    ``config`` and returns their *parent* as the content root.
 
     *markers* is a list of subdirectory names whose presence indicates a server
     root. Defaults to ``["mods", "plugins", "config"]``.
@@ -98,11 +104,14 @@ def find_content_root(base: Path, markers: list[str] | None = None) -> Path:
     if markers is None:
         markers = ["mods", "plugins", "config"]
 
-    # Collect the parent of every marker directory found, then pick the shallowest.
+    base_depth = len(base.parts)
+
+    # Collect the parent of every marker directory found within max_depth, then
+    # pick the shallowest.
     parents: list[Path] = []
     for marker in markers:
         for match in base.rglob(marker):
-            if match.is_dir():
+            if match.is_dir() and len(match.parts) - base_depth <= max_depth:
                 parents.append(match.parent)
 
     if parents:

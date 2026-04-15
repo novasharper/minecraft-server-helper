@@ -37,19 +37,23 @@ class FabricInstaller:
         versions = get_json(
             self.session, f"{_META_BASE}/v2/versions/loader/{self.minecraft_version}"
         )
-        if not versions:
+        stable = [v for v in versions if v.get("loader", {}).get("stable")]
+        candidates = stable or list(versions)  # fall back to all if none marked stable
+        if not candidates:
             raise ValueError(
                 f"No Fabric loader versions found for Minecraft {self.minecraft_version}"
             )
-        return versions[0]["loader"]["version"]
+        return candidates[0]["loader"]["version"]
 
     def _resolve_installer_version(self) -> str:
         if self.installer_version.upper() != "LATEST":
             return self.installer_version
         versions = get_json(self.session, f"{_META_BASE}/v2/versions/installer")
-        if not versions:
+        stable = [v for v in versions if v.get("stable")]
+        candidates = stable or list(versions)
+        if not candidates:
             raise ValueError("No Fabric installer versions found")
-        return versions[0]["version"]
+        return candidates[0]["version"]
 
     def install(self, output_dir: Path) -> Path:
         """Download the Fabric server launcher JAR into *output_dir*.

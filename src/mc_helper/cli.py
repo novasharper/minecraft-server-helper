@@ -335,7 +335,9 @@ def _setup_modpack(config, output_dir: Path, dry_run: bool) -> None:
     print(f"Modpack installed to {output_dir}")
 
 
-def _download_mods(mods_cfg, mc_ver: str, loader: str | None, output_dir: Path, session) -> list[str]:
+def _download_mods(
+    mods_cfg, mc_ver: str, loader: str | None, output_dir: Path, session
+) -> list[str]:
     """Download all configured mods. Returns list of relative paths installed."""
     installed: list[str] = []
     errors: list[str] = []

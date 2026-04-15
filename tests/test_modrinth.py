@@ -73,6 +73,25 @@ def test_should_include_glob_exclusion():
     assert _should_include(entry, ["sodium*"]) is False
 
 
+def test_should_include_global_slug_excluded():
+    entry = {"path": "mods/sodium.jar", "env": {"server": "required"}, "downloads": []}
+    assert _should_include(entry, [], excluded_slugs={"sodium"}, project_slug="sodium") is False
+
+
+def test_should_include_force_include_overrides_slug_exclude():
+    entry = {"path": "mods/sodium.jar", "env": {"server": "required"}, "downloads": []}
+    assert (
+        _should_include(
+            entry,
+            [],
+            excluded_slugs={"sodium"},
+            force_include_slugs={"sodium"},
+            project_slug="sodium",
+        )
+        is True
+    )
+
+
 # ── resolve_version ───────────────────────────────────────────────────────────
 
 
@@ -248,3 +267,49 @@ def test_install_prefers_sha512_over_sha1(tmp_path):
     # Should not raise even though sha1 is wrong — sha512 is used instead
     ModrinthPackInstaller("sha-pack", session=session, show_progress=False).install(tmp_path)
     assert (tmp_path / "mods" / "mod.jar").read_bytes() == mod_bytes
+
+
+# ── G1: global slug exclusion ─────────────────────────────────────────────────
+
+_MR_CDN = "https://cdn.modrinth.com/data"
+
+
+@rsps_lib.activate
+def test_install_global_slug_excludes_mod(tmp_path, monkeypatch):
+    """Mods whose slug appears in globalExcludes must be skipped."""
+    project_id = "AANobbMI"  # fake project ID (sodium)
+    mod_url = f"{_MR_CDN}/{project_id}/versions/abc123/sodium-1.0.jar"
+    index = _minimal_index(
+        files=[
+            {
+                "path": "mods/sodium-1.0.jar",
+                "env": {"server": "required"},
+                "downloads": [mod_url],
+                "hashes": {},
+            }
+        ]
+    )
+    mrpack_bytes = _make_mrpack(index)
+
+    rsps_lib.add(rsps_lib.GET, f"{_API}/project/test-pack/versions", json=[_make_version()])
+    rsps_lib.add(rsps_lib.GET, "https://cdn.modrinth.com/pack.mrpack", body=mrpack_bytes)
+    # Batch slug resolution: project_id → "sodium"
+    rsps_lib.add(
+        rsps_lib.GET,
+        f"{_API}/projects",
+        json=[{"id": project_id, "slug": "sodium"}],
+    )
+    # mod download should NOT be called — no mock registered
+
+    import mc_helper.modpack.modrinth as mr_mod
+
+    monkeypatch.setattr(
+        mr_mod,
+        "_load_mr_filter",
+        lambda: {"globalExcludes": ["sodium"], "globalForceIncludes": [], "modpacks": {}},
+    )
+
+    session = build_session()
+    ModrinthPackInstaller("test-pack", session=session, show_progress=False).install(tmp_path)
+
+    assert not (tmp_path / "mods" / "sodium-1.0.jar").exists()
