@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 `minecraft-server-helper` is a Python CLI (`mc-helper`) that prepares a Minecraft server directory without Docker. It downloads server JARs, installs mod loaders, and fetches modpacks/mods from CurseForge or Modrinth — driven by a single YAML config file.
 
-See `PLAN.md` for full design details, `TODO.md` for implementation status, and `docs/` for user-facing reference documentation.
+See `docs/` for user-facing reference documentation.
 
 ## Setup
 
@@ -64,7 +64,7 @@ Pydantic v2 models. YAML is loaded → `${VAR}` env interpolation runs on all st
 
 ### Server installers (`server/`)
 
-Each module exposes `install(minecraft_version, output_dir, ...) -> Path | None`. Vanilla, Fabric, Paper, Purpur return the installed JAR path. Forge and NeoForge run `java -jar <installer>.jar --installServer` as a subprocess and return `None` (the installer creates its own `run.sh`).
+Each module exposes an installer class (`VanillaInstaller`, `FabricInstaller`, `ForgeInstaller`, `NeoForgeInstaller`, `PaperInstaller`, `PurpurInstaller`). The constructor takes version and session params; `install(output_dir)` downloads and installs the server. Vanilla, Fabric, Paper, Purpur return the installed JAR `Path`. Forge and NeoForge run `java -jar <installer>.jar --installServer` as a subprocess and return `None` (the installer creates its own `run.sh`).
 
 ### Parallelism
 
