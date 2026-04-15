@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Is
 
-`minecraft-server-helper` is a Python CLI (`mc-helper`) that prepares a Minecraft server directory without Docker. It downloads server JARs, installs mod loaders, and fetches modpacks/mods from CurseForge or Modrinth — driven by a single YAML config file.
+`minecraft-server-helper` is a Python CLI (`mc-helper`) that prepares a Minecraft server directory without Docker. It downloads server JARs, installs mod loaders, and fetches modpacks/mods from CurseForge, Modrinth, or FTB — driven by a single YAML config file.
 
 See `docs/` for user-facing reference documentation.
 
@@ -71,17 +71,19 @@ Each module exposes an installer class (`VanillaInstaller`, `FabricInstaller`, `
 
 `_download_mods()` submits all Modrinth and CurseForge mod downloads to a `ThreadPoolExecutor(max_workers=10)`. Errors are collected per-mod; all are reported before exiting non-zero if any failed. This helper is called by both `_setup_mods()` (mods-only path) and `_install_extra_mods()` (overlay path).
 
-## Reference Sources (in parent repo)
+## Reference Sources
 
-| Topic | Reference |
-|---|---|
-| Vanilla install | `../docker-minecraft-server/scripts/start-deployVanilla` |
-| Fabric install | `../mc-image-helper/src/main/java/me/itzg/helpers/fabric/` |
-| Forge install | `../mc-image-helper/src/main/java/me/itzg/helpers/forge/` |
-| Paper install | `../mc-image-helper/src/main/java/me/itzg/helpers/paper/` |
-| CurseForge modpack | `../mc-image-helper/src/main/java/me/itzg/helpers/curseforge/` |
-| Modrinth modpack | `../mc-image-helper/src/main/java/me/itzg/helpers/modrinth/` |
-| FTB modpack | `../FTB-Server-Installer/` |
-| Server pack extract | `../docker-minecraft-server/scripts/start-setupModpack` |
-| Server properties | `../docker-minecraft-server/files/property-definitions.json` |
-| Mod filter rules | `../docker-minecraft-server/files/cf-exclude-include.json` |
+Clone these repositories locally when you need to read reference implementations. Do not assume a specific directory layout relative to this repo.
+
+| Topic | Repository | Path |
+|---|---|---|
+| Vanilla install | [itzg/docker-minecraft-server](https://github.com/itzg/docker-minecraft-server) | `scripts/start-deployVanilla` |
+| Fabric install | [itzg/mc-image-helper](https://github.com/itzg/mc-image-helper) | `src/main/java/me/itzg/helpers/fabric/` |
+| Forge install | [itzg/mc-image-helper](https://github.com/itzg/mc-image-helper) | `src/main/java/me/itzg/helpers/forge/` |
+| Paper install | [itzg/mc-image-helper](https://github.com/itzg/mc-image-helper) | `src/main/java/me/itzg/helpers/paper/` |
+| CurseForge modpack | [itzg/mc-image-helper](https://github.com/itzg/mc-image-helper) | `src/main/java/me/itzg/helpers/curseforge/` |
+| Modrinth modpack | [itzg/mc-image-helper](https://github.com/itzg/mc-image-helper) | `src/main/java/me/itzg/helpers/modrinth/` |
+| FTB modpack | [FTBTeam/FTB-Server-Installer](https://github.com/FTBTeam/FTB-Server-Installer) | *(root)* |
+| Server pack extract | [itzg/docker-minecraft-server](https://github.com/itzg/docker-minecraft-server) | `scripts/start-setupModpack` |
+| Server properties | [itzg/docker-minecraft-server](https://github.com/itzg/docker-minecraft-server) | `files/property-definitions.json` |
+| Mod filter rules | [itzg/docker-minecraft-server](https://github.com/itzg/docker-minecraft-server) | `files/cf-exclude-include.json` |
