@@ -58,11 +58,11 @@ The valid combinations are:
 
 ## `modpack`
 
-Installs a modpack from Modrinth or CurseForge, including all mods, overrides, and the embedded server JAR.
+Installs a modpack from Modrinth, CurseForge, or FTB (Feed The Beast), including all mods, overrides, and the embedded server JAR.
 
 ```yaml
 modpack:
-  platform: modrinth       # modrinth | curseforge
+  platform: modrinth       # modrinth | curseforge | ftb
   project: "better-mc-fabric"
   version: LATEST
   version_type: release
@@ -89,13 +89,25 @@ modpack:
 
 Either `slug` or `file_id` is required for CurseForge.
 
+### FTB fields
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `platform` | string | *(required)* | Must be `ftb`. |
+| `pack_id` | int | *(required)* | Numeric FTB pack ID (visible in the pack URL on https://feed-the-beast.com). |
+| `version_id` | int | `null` | Specific version ID. Null picks the latest version matching `version_type`. |
+| `api_key` | string | `public` | API key for private packs. Use `${FTB_API_KEY}` to read from the environment. |
+| `version_type` | string | `release` | Preferred release stability when `version_id` is not set: `release`, `beta`, or `alpha`. |
+
+FTB packs are downloaded directly from the FTB CDN. Files with `clientonly: true` are automatically skipped. The modloader (Forge, NeoForge, Fabric, etc.) is read from the pack metadata and installed by `mc-helper` after the pack files are downloaded — no manual `server.type` coordination is required beyond ensuring the type matches the pack's loader.
+
 ### Shared fields
 
 | Field | Type | Default | Description |
 |---|---|---|---|
-| `exclude_mods` | list[string] | `[]` | Slugs or IDs of mods to skip (e.g. client-only mods). |
-| `force_include_mods` | list[string] | `[]` | Slugs or IDs to always include even if they would otherwise be filtered. |
-| `overrides_exclusions` | list[string] | `[]` | Paths inside the `overrides/` directory to skip during extraction. |
+| `exclude_mods` | list[string] | `[]` | Glob patterns matched against filenames; matching files are skipped. For CurseForge, matched against project IDs. |
+| `force_include_mods` | list[string] | `[]` | Slugs or IDs to always include even if they would otherwise be filtered. (CurseForge only.) |
+| `overrides_exclusions` | list[string] | `[]` | Paths inside the `overrides/` directory to skip during extraction. (Modrinth and CurseForge only.) |
 
 ---
 

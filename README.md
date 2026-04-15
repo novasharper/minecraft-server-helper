@@ -1,11 +1,11 @@
 # minecraft-server-helper
 
-A standalone Python CLI (`mc-helper`) that prepares a Minecraft server directory without Docker. It downloads server JARs, installs mod loaders (Vanilla, Fabric, Forge, NeoForge, Paper, Purpur), and fetches modpacks or mods from CurseForge or Modrinth — all driven by a single YAML config file.
+A standalone Python CLI (`mc-helper`) that prepares a Minecraft server directory without Docker. It downloads server JARs, installs mod loaders (Vanilla, Fabric, Forge, NeoForge, Paper, Purpur), and fetches modpacks or mods from CurseForge, Modrinth, or FTB — all driven by a single YAML config file.
 
 ## Features
 
 - **Seven server types**: Vanilla, Fabric, Forge, NeoForge, Paper, Purpur
-- **Modpacks**: CurseForge and Modrinth modpack installation with override extraction
+- **Modpacks**: CurseForge, Modrinth, and FTB modpack installation with override extraction
 - **Individual mods**: Modrinth and CurseForge mod resolution by slug, ID, or version; parallel downloads
 - **Server packs**: Pre-assembled ZIP/tar.gz from direct URL or GitHub release asset
 - **Idempotent**: Manifest-tracked state skips unchanged files and removes stale ones on re-run
@@ -73,6 +73,21 @@ modpack:
   platform: modrinth
   project: "better-mc-fabric"
   version: LATEST
+```
+
+### Minimal example — FTB modpack
+
+```yaml
+server:
+  type: neoforge
+  minecraft_version: "1.21.1"
+  output_dir: ./server
+  eula: true
+
+modpack:
+  platform: ftb
+  pack_id: 7
+  version_type: release   # release | beta | alpha; omit version_id to use latest
 ```
 
 ### Minimal example — individual mods

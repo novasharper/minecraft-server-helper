@@ -7,6 +7,7 @@ from mc_helper.config import load_config
 from mc_helper.http_client import build_session, download_file
 from mc_helper.manifest import Manifest
 from mc_helper.modpack import curseforge as modpack_cf
+from mc_helper.modpack import ftb as modpack_ftb
 from mc_helper.modpack import modrinth as modpack_mr
 from mc_helper.mods import curseforge as cf_mods
 from mc_helper.mods import modrinth as mr_mods
@@ -288,6 +289,15 @@ def _setup_modpack(config, output_dir: Path, dry_run: bool) -> None:
             exclude_mods=mp.exclude_mods or None,
             force_include_mods=mp.force_include_mods or None,
             overrides_exclusions=mp.overrides_exclusions or None,
+        ).install(output_dir)
+    elif mp.platform == "ftb":
+        modpack_ftb.FTBPackInstaller(
+            pack_id=mp.pack_id,
+            version_id=mp.version_id,
+            api_key=mp.api_key or "public",
+            version_type=mp.version_type,
+            exclude_mods=mp.exclude_mods or None,
+            session=session,
         ).install(output_dir)
 
     # Install server JAR using loader info the modpack installer saved to manifest

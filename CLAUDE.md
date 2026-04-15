@@ -44,7 +44,7 @@ poetry run mc-helper setup --config example-config.yaml --dry-run
 The entry point uses `argparse` (not Click). `_cmd_setup` runs the base install mode first, then optionally installs extra mods:
 
 1. `server_pack` → `_setup_server_pack()` → `pack/server_pack.py`
-2. `modpack` → `_setup_modpack()` → `modpack/curseforge.py` or `modpack/modrinth.py`
+2. `modpack` → `_setup_modpack()` → `modpack/curseforge.py`, `modpack/modrinth.py`, or `modpack/ftb.py`
 3. `mods` only → `_setup_mods()` → `_download_mods()` (parallel), then `_install_server_jar()`
 4. *(none)* → `_install_server_jar()` only
 5. If `mods` is set alongside `server_pack` or `modpack` → `_install_extra_mods()` runs after the base step
@@ -81,6 +81,7 @@ Each module exposes an installer class (`VanillaInstaller`, `FabricInstaller`, `
 | Paper install | `../mc-image-helper/src/main/java/me/itzg/helpers/paper/` |
 | CurseForge modpack | `../mc-image-helper/src/main/java/me/itzg/helpers/curseforge/` |
 | Modrinth modpack | `../mc-image-helper/src/main/java/me/itzg/helpers/modrinth/` |
+| FTB modpack | `../FTB-Server-Installer/` |
 | Server pack extract | `../docker-minecraft-server/scripts/start-setupModpack` |
 | Server properties | `../docker-minecraft-server/files/property-definitions.json` |
 | Mod filter rules | `../docker-minecraft-server/files/cf-exclude-include.json` |

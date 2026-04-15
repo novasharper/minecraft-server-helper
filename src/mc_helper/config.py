@@ -56,7 +56,7 @@ class ServerConfig(BaseModel):
 
 # ── Modpack ───────────────────────────────────────────────────────────────────
 
-ModpackPlatform = Literal["modrinth", "curseforge"]
+ModpackPlatform = Literal["modrinth", "curseforge", "ftb"]
 VersionType = Literal["release", "beta", "alpha"]
 
 
@@ -74,6 +74,10 @@ class ModpackConfig(BaseModel):
     file_id: Optional[int] = None
     filename_matcher: Optional[str] = None
 
+    # FTB
+    pack_id: Optional[int] = None
+    version_id: Optional[int] = None
+
     # Shared
     exclude_mods: list[str] = Field(default_factory=list)
     force_include_mods: list[str] = Field(default_factory=list)
@@ -90,6 +94,8 @@ class ModpackConfig(BaseModel):
                 raise ValueError(
                     "modpack.slug or modpack.file_id is required for platform 'curseforge'"
                 )
+        if self.platform == "ftb" and self.pack_id is None:
+            raise ValueError("modpack.pack_id is required for platform 'ftb'")
         return self
 
 

@@ -16,7 +16,7 @@ server:
 
 # ── Option A: Install a modpack ───────────────────────────────────────────────
 modpack:
-  platform: modrinth            # modrinth | curseforge
+  platform: modrinth            # modrinth | curseforge | ftb
 
   # Modrinth fields
   project: "better-mc-fabric"   # slug, project ID, page URL, or local .mrpack path
@@ -29,10 +29,15 @@ modpack:
   file_id: ~                    # null = newest matching file
   filename_matcher: ~           # optional substring filter on filename
 
+  # FTB fields
+  pack_id: ~                    # numeric FTB pack ID (required for ftb)
+  version_id: ~                 # null = latest release (or matching version_type)
+  # api_key: ${FTB_API_KEY}     # only needed for private packs; defaults to "public"
+
   # Shared
-  exclude_mods: []              # slugs/IDs to skip
-  force_include_mods: []        # slugs/IDs to always include even if filtered
-  overrides_exclusions: []      # paths inside overrides/ to skip
+  exclude_mods: []              # glob patterns matched against filenames to skip
+  force_include_mods: []        # slugs/IDs to always include even if filtered (CurseForge only)
+  overrides_exclusions: []      # paths inside overrides/ to skip (Modrinth/CurseForge only)
 
 # ── Option B: Install individual mods ────────────────────────────────────────
 # mods:
