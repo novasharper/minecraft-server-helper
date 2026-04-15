@@ -48,7 +48,7 @@ After a successful `setup` run, `output_dir` contains the server JAR (or extract
 
 ## Configuration
 
-A config file has one required `server` section and exactly one install mode: `modpack`, `mods`, or `server_pack`. Omitting all three installs only the server JAR.
+A config file has one required `server` section and one or more optional install sections. `modpack` and `server_pack` are mutually exclusive base install modes; `mods` may be combined with either to add extra mods on top. Omitting all three installs only the server JAR.
 
 ### Minimal example — Modrinth modpack
 
@@ -103,6 +103,29 @@ server_pack:
   tag: LATEST
   asset: "*server*"
 ```
+
+### Adding extra mods to a modpack or server pack
+
+`mods` can be combined with `modpack` or `server_pack` to layer additional mods on top of the base install:
+
+```yaml
+server:
+  type: fabric
+  minecraft_version: "1.21.1"
+  output_dir: ./server
+  eula: true
+
+modpack:
+  platform: modrinth
+  project: "better-mc-fabric"
+
+mods:
+  modrinth:
+    - iris
+    - bobby
+```
+
+The base pack installs first, then the extra mods are downloaded into `<output_dir>/mods/`. On re-run the extra mods are always re-installed after the pack (the pack's cleanup removes them; they are re-downloaded immediately after).
 
 See [`example-config.yaml`](example-config.yaml) for the full annotated schema covering every field and option. Full reference documentation is in [`docs/`](docs/):
 

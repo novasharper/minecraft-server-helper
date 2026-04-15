@@ -326,3 +326,72 @@ class TestCmdSetupDispatch:
 
         assert (override_dir / "eula.txt").exists()
         assert (override_dir / "launch.sh").exists()
+
+    def test_modpack_with_extra_mods_calls_both(self, tmp_path):
+        """modpack + mods: _setup_modpack runs, then _install_extra_mods runs."""
+        data = _base_config("fabric")
+        data["server"]["output_dir"] = str(tmp_path)
+        data["modpack"] = {"platform": "modrinth", "project": "fabulously-optimized"}
+        data["mods"] = {"modrinth": ["iris"]}
+        cfg_file = _write_config(tmp_path, data)
+        from mc_helper.cli import _cmd_setup
+
+        with (
+            patch("mc_helper.cli._setup_modpack") as mock_modpack,
+            patch("mc_helper.cli._install_extra_mods") as mock_extra,
+        ):
+            _cmd_setup(self._make_args(cfg_file))
+
+        mock_modpack.assert_called_once()
+        mock_extra.assert_called_once()
+
+    def test_server_pack_with_extra_mods_calls_both(self, tmp_path):
+        """server_pack + mods: _setup_server_pack runs, then _install_extra_mods runs."""
+        data = _base_config("fabric")
+        data["server"]["output_dir"] = str(tmp_path)
+        data["server_pack"] = {"url": "https://example.com/pack.zip"}
+        data["mods"] = {"modrinth": ["iris"]}
+        cfg_file = _write_config(tmp_path, data)
+        from mc_helper.cli import _cmd_setup
+
+        with (
+            patch("mc_helper.cli._setup_server_pack") as mock_sp,
+            patch("mc_helper.cli._install_extra_mods") as mock_extra,
+        ):
+            _cmd_setup(self._make_args(cfg_file))
+
+        mock_sp.assert_called_once()
+        mock_extra.assert_called_once()
+
+    def test_modpack_without_mods_does_not_call_extra(self, tmp_path):
+        """modpack alone: _install_extra_mods must NOT be called."""
+        data = _base_config("fabric")
+        data["server"]["output_dir"] = str(tmp_path)
+        data["modpack"] = {"platform": "modrinth", "project": "fabulously-optimized"}
+        cfg_file = _write_config(tmp_path, data)
+        from mc_helper.cli import _cmd_setup
+
+        with (
+            patch("mc_helper.cli._setup_modpack"),
+            patch("mc_helper.cli._install_extra_mods") as mock_extra,
+        ):
+            _cmd_setup(self._make_args(cfg_file))
+
+        mock_extra.assert_not_called()
+
+    def test_extra_mods_dry_run(self, tmp_path, capsys):
+        """Dry-run with modpack + mods prints extra mods line without downloading."""
+        data = _base_config("fabric")
+        data["server"]["output_dir"] = str(tmp_path)
+        data["modpack"] = {"platform": "modrinth", "project": "fabulously-optimized"}
+        data["mods"] = {"modrinth": ["iris", "sodium"], "urls": ["https://example.com/mod.jar"]}
+        cfg_file = _write_config(tmp_path, data)
+        from mc_helper.cli import _cmd_setup
+
+        with patch("mc_helper.cli._setup_modpack"):
+            _cmd_setup(self._make_args(cfg_file, dry_run=True))
+
+        out = capsys.readouterr().out
+        assert "extra mod" in out
+        assert "2 Modrinth" in out
+        assert "1 extra mod" in out

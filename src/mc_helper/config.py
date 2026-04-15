@@ -151,18 +151,7 @@ class RootConfig(BaseModel):
     server_pack: Optional[ServerPackConfig] = None
 
     @model_validator(mode="after")
-    def _check_mutual_exclusion(self) -> "RootConfig":
-        active = [
-            name
-            for name, val in [
-                ("modpack", self.modpack),
-                ("mods", self.mods),
-                ("server_pack", self.server_pack),
-            ]
-            if val is not None
-        ]
-        if len(active) > 1:
-            raise ValueError(
-                f"Exactly one of modpack / mods / server_pack may be set; got: {', '.join(active)}"
-            )
+    def _check_install_mode(self) -> "RootConfig":
+        if self.modpack and self.server_pack:
+            raise ValueError("modpack and server_pack cannot both be set")
         return self

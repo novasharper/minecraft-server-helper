@@ -41,18 +41,19 @@ poetry run mc-helper setup --config example-config.yaml --dry-run
 
 ### CLI dispatch (`cli.py`)
 
-The entry point uses `argparse` (not Click). `_cmd_setup` dispatches based on which install mode is active:
+The entry point uses `argparse` (not Click). `_cmd_setup` runs the base install mode first, then optionally installs extra mods:
 
 1. `server_pack` → `_setup_server_pack()` → `pack/server_pack.py`
 2. `modpack` → `_setup_modpack()` → `modpack/curseforge.py` or `modpack/modrinth.py`
-3. `mods` → `_setup_mods()` → parallel `mods/curseforge.py` + `mods/modrinth.py`, then `_install_server_jar()`
+3. `mods` only → `_setup_mods()` → `_download_mods()` (parallel), then `_install_server_jar()`
 4. *(none)* → `_install_server_jar()` only
+5. If `mods` is set alongside `server_pack` or `modpack` → `_install_extra_mods()` runs after the base step
 
-After install, `_write_server_files()` always writes `eula.txt`, `server.properties`, and `launch.sh`. Modpack installers handle server JAR installation themselves (embedded in pack metadata); `_install_server_jar()` is only called explicitly for the `mods` and bare-server cases.
+`_download_mods()` is a shared helper used by both `_setup_mods()` and `_install_extra_mods()`. After install, `_write_server_files()` always writes `eula.txt`, `server.properties`, and `launch.sh`. Modpack installers handle server JAR installation themselves (embedded in pack metadata); `_install_server_jar()` is only called explicitly for the `mods` and bare-server cases.
 
 ### Config (`config.py`)
 
-Pydantic v2 models. YAML is loaded → `${VAR}` env interpolation runs on all string values → `model_validate()`. A `RootConfig` model validator enforces exactly one of `modpack` / `mods` / `server_pack`. The `server.properties` map keys are written verbatim as `server.properties` entries.
+Pydantic v2 models. YAML is loaded → `${VAR}` env interpolation runs on all string values → `model_validate()`. A `RootConfig` model validator forbids `modpack + server_pack` together; `mods` may be combined with either. The `server.properties` map keys are written verbatim as `server.properties` entries.
 
 ### Manifest (`manifest.py`)
 
@@ -68,7 +69,7 @@ Each module exposes an installer class (`VanillaInstaller`, `FabricInstaller`, `
 
 ### Parallelism
 
-`_setup_mods()` submits all Modrinth and CurseForge mod downloads to a `ThreadPoolExecutor(max_workers=10)`. Errors are collected per-mod; all are reported before exiting non-zero if any failed.
+`_download_mods()` submits all Modrinth and CurseForge mod downloads to a `ThreadPoolExecutor(max_workers=10)`. Errors are collected per-mod; all are reported before exiting non-zero if any failed. This helper is called by both `_setup_mods()` (mods-only path) and `_install_extra_mods()` (overlay path).
 
 ## Reference Sources (in parent repo)
 

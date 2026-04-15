@@ -81,12 +81,18 @@ def _cmd_setup(args: argparse.Namespace) -> None:
         _setup_modpack(config, output_dir, dry_run)
     elif config.mods:
         _setup_mods(config, output_dir, dry_run)
+        return
     else:
         # Vanilla / loader-only: install server JAR, then write config files
         jar_path = _install_server_jar(config, output_dir, dry_run)
         _write_server_files(config, output_dir, jar_path, dry_run)
         if not dry_run:
             print(f"Server installed to {output_dir}")
+        return
+
+    # Extra mods layered on top of server_pack or modpack
+    if config.mods:
+        _install_extra_mods(config, output_dir, dry_run)
 
 
 def _resolve_mc_version(session, version: str) -> str:
@@ -319,40 +325,19 @@ def _setup_modpack(config, output_dir: Path, dry_run: bool) -> None:
     print(f"Modpack installed to {output_dir}")
 
 
-def _setup_mods(config, output_dir: Path, dry_run: bool) -> None:
-    if dry_run:
-        mods_cfg = config.mods
-        mr_count = len(mods_cfg.modrinth or [])
-        cf_count = len(mods_cfg.curseforge.files) if mods_cfg.curseforge else 0
-        url_count = len(mods_cfg.urls or [])
-        print(
-            f"[dry-run] Would install {mr_count} Modrinth + {cf_count} CurseForge "
-            f"+ {url_count} URL mod(s) to {output_dir}/mods/"
-        )
-        jar_path = _install_server_jar(config, output_dir, dry_run)
-        _write_server_files(config, output_dir, jar_path, dry_run)
-        return
-
-    mods_cfg = config.mods
-    loader = (
-        config.server.type if config.server.type not in ("vanilla", "paper", "purpur") else None
-    )
-
-    session = build_session()
-    mc_ver = _resolve_mc_version(session, config.server.minecraft_version)
+def _download_mods(mods_cfg, mc_ver: str, loader: str | None, output_dir: Path, session) -> list[str]:
+    """Download all configured mods. Returns list of relative paths installed."""
     installed: list[str] = []
     errors: list[str] = []
-
     tasks: list[tuple] = []
 
     for spec in mods_cfg.modrinth or []:
         tasks.append(("modrinth", spec))
 
     cf = mods_cfg.curseforge
-    if cf:
-        cf_session = build_session(extra_headers={"X-Api-Key": cf.api_key})
-        for spec in cf.files:
-            tasks.append(("curseforge", spec))
+    cf_session = build_session(extra_headers={"X-Api-Key": cf.api_key}) if cf else None
+    for spec in (cf.files if cf else []):
+        tasks.append(("curseforge", spec))
 
     def _run(kind: str, spec: str) -> str:
         if kind == "modrinth":
@@ -396,11 +381,68 @@ def _setup_mods(config, output_dir: Path, dry_run: bool) -> None:
         print(f"\n{len(errors)} mod(s) failed to install.", file=sys.stderr)
         sys.exit(1)
 
+    return installed
+
+
+def _setup_mods(config, output_dir: Path, dry_run: bool) -> None:
+    mods_cfg = config.mods
+    if dry_run:
+        mr_count = len(mods_cfg.modrinth or [])
+        cf_count = len(mods_cfg.curseforge.files) if mods_cfg.curseforge else 0
+        url_count = len(mods_cfg.urls or [])
+        print(
+            f"[dry-run] Would install {mr_count} Modrinth + {cf_count} CurseForge "
+            f"+ {url_count} URL mod(s) to {output_dir}/mods/"
+        )
+        jar_path = _install_server_jar(config, output_dir, dry_run)
+        _write_server_files(config, output_dir, jar_path, dry_run)
+        return
+
+    loader = (
+        config.server.type if config.server.type not in ("vanilla", "paper", "purpur") else None
+    )
+    session = build_session()
+    mc_ver = _resolve_mc_version(session, config.server.minecraft_version)
+
+    installed = _download_mods(mods_cfg, mc_ver, loader, output_dir, session)
+
     print(f"\n{len(installed)} mod(s) installed to {output_dir}/mods/")
 
     # Install server JAR and write config files
     jar_path = _install_server_jar(config, output_dir, dry_run)
     _write_server_files(config, output_dir, jar_path, dry_run)
+
+
+def _install_extra_mods(config, output_dir: Path, dry_run: bool) -> None:
+    """Install extra mods on top of an already-installed modpack or server pack."""
+    mods_cfg = config.mods
+    if dry_run:
+        mr_count = len(mods_cfg.modrinth or [])
+        cf_count = len(mods_cfg.curseforge.files) if mods_cfg.curseforge else 0
+        url_count = len(mods_cfg.urls or [])
+        print(
+            f"[dry-run] Would install {mr_count} Modrinth + {cf_count} CurseForge "
+            f"+ {url_count} extra mod(s) to {output_dir}/mods/"
+        )
+        return
+
+    manifest = Manifest(output_dir)
+    manifest.load()
+    mc_version_raw = manifest.mc_version or config.server.minecraft_version
+    loader = manifest.loader_type or (
+        config.server.type if config.server.type not in ("vanilla", "paper", "purpur") else None
+    )
+
+    session = build_session()
+    mc_ver = _resolve_mc_version(session, mc_version_raw)
+
+    installed = _download_mods(mods_cfg, mc_ver, loader, output_dir, session)
+
+    # Append extra mod paths to manifest; base installer already saved its files
+    manifest.files = sorted(set(manifest.files) | set(installed))
+    manifest.save()
+
+    print(f"\n{len(installed)} extra mod(s) installed to {output_dir}/mods/")
 
 
 def _cmd_status(args: argparse.Namespace) -> None:

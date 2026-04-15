@@ -79,13 +79,14 @@ def test_no_content_sections_ok():
     assert cfg.server_pack is None
 
 
-def test_modpack_and_mods_raises():
+def test_modpack_and_mods_allowed():
     data = _minimal_data(
         modpack={"platform": "modrinth", "project": "fabric-api"},
         mods={"modrinth": ["fabric-api"]},
     )
-    with pytest.raises(ValidationError, match="modpack"):
-        RootConfig.model_validate(data)
+    cfg = RootConfig.model_validate(data)
+    assert cfg.modpack is not None
+    assert cfg.mods is not None
 
 
 def test_modpack_and_server_pack_raises():
@@ -97,13 +98,14 @@ def test_modpack_and_server_pack_raises():
         RootConfig.model_validate(data)
 
 
-def test_mods_and_server_pack_raises():
+def test_mods_and_server_pack_allowed():
     data = _minimal_data(
         mods={"modrinth": ["fabric-api"]},
         server_pack={"url": "https://example.com/pack.zip"},
     )
-    with pytest.raises(ValidationError, match="mods"):
-        RootConfig.model_validate(data)
+    cfg = RootConfig.model_validate(data)
+    assert cfg.mods is not None
+    assert cfg.server_pack is not None
 
 
 # ── ModpackConfig ─────────────────────────────────────────────────────────────
