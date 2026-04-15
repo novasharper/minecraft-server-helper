@@ -4,7 +4,7 @@ import pytest
 import responses as rsps_lib
 
 from mc_helper.http_client import build_session
-from mc_helper.mods.curseforge import install_mod, parse_mod_spec
+from mc_helper.mods.curseforge import CurseForgeModInstaller, parse_mod_spec
 
 _API = "https://api.curseforge.com"
 _FAKE_KEY = "test-api-key"
@@ -91,7 +91,9 @@ def test_install_mod_by_slug(tmp_path):
     )
 
     session = build_session()
-    path = install_mod("jei", tmp_path, api_key=_FAKE_KEY, session=session, show_progress=False)
+    path = CurseForgeModInstaller("jei", _FAKE_KEY, session=session, show_progress=False).install(
+        tmp_path
+    )
 
     assert path == "mods/jei-1.21.1-18.0.jar"
     assert (tmp_path / "mods" / "jei-1.21.1-18.0.jar").read_bytes() == jar_bytes
@@ -112,7 +114,9 @@ def test_install_mod_by_project_id(tmp_path):
     )
 
     session = build_session()
-    path = install_mod("238222", tmp_path, api_key=_FAKE_KEY, session=session, show_progress=False)
+    path = CurseForgeModInstaller(
+        "238222", _FAKE_KEY, session=session, show_progress=False
+    ).install(tmp_path)
 
     assert path == "mods/jei-1.21.1-18.0.jar"
 
@@ -137,9 +141,9 @@ def test_install_mod_by_slug_with_file_id(tmp_path):
     )
 
     session = build_session()
-    path = install_mod(
-        "jei:4593548", tmp_path, api_key=_FAKE_KEY, session=session, show_progress=False
-    )
+    path = CurseForgeModInstaller(
+        "jei:4593548", _FAKE_KEY, session=session, show_progress=False
+    ).install(tmp_path)
 
     assert path == "mods/jei-1.21.1-18.0.jar"
 
@@ -159,9 +163,9 @@ def test_install_mod_by_project_id_with_file_id(tmp_path):
     )
 
     session = build_session()
-    path = install_mod(
-        "238222:4593548", tmp_path, api_key=_FAKE_KEY, session=session, show_progress=False
-    )
+    path = CurseForgeModInstaller(
+        "238222:4593548", _FAKE_KEY, session=session, show_progress=False
+    ).install(tmp_path)
 
     assert path == "mods/jei-1.21.1-18.0.jar"
 
@@ -186,13 +190,12 @@ def test_install_mod_by_url(tmp_path):
     )
 
     session = build_session()
-    path = install_mod(
+    path = CurseForgeModInstaller(
         "https://www.curseforge.com/minecraft/mc-mods/jei",
-        tmp_path,
-        api_key=_FAKE_KEY,
+        _FAKE_KEY,
         session=session,
         show_progress=False,
-    )
+    ).install(tmp_path)
 
     assert path == "mods/jei-1.21.1-18.0.jar"
 
@@ -207,9 +210,9 @@ def test_install_mod_slug_not_found_raises(tmp_path):
 
     session = build_session()
     with pytest.raises(ValueError, match="not found for slug"):
-        install_mod(
-            "nonexistent", tmp_path, api_key=_FAKE_KEY, session=session, show_progress=False
-        )
+        CurseForgeModInstaller(
+            "nonexistent", _FAKE_KEY, session=session, show_progress=False
+        ).install(tmp_path)
 
 
 @rsps_lib.activate
@@ -222,7 +225,9 @@ def test_install_mod_no_files_raises(tmp_path):
 
     session = build_session()
     with pytest.raises(ValueError, match="No files found"):
-        install_mod("238222", tmp_path, api_key=_FAKE_KEY, session=session, show_progress=False)
+        CurseForgeModInstaller("238222", _FAKE_KEY, session=session, show_progress=False).install(
+            tmp_path
+        )
 
 
 @rsps_lib.activate
@@ -241,7 +246,9 @@ def test_install_mod_null_download_url_uses_fallback(tmp_path):
     rsps_lib.add(rsps_lib.GET, fallback_url, body=jar_bytes)
 
     session = build_session()
-    path = install_mod("238222", tmp_path, api_key=_FAKE_KEY, session=session, show_progress=False)
+    path = CurseForgeModInstaller(
+        "238222", _FAKE_KEY, session=session, show_progress=False
+    ).install(tmp_path)
 
     assert path == f"mods/{filename}"
     assert (tmp_path / "mods" / filename).read_bytes() == jar_bytes
@@ -263,13 +270,13 @@ def test_install_mod_with_mc_version_filter(tmp_path):
     )
 
     session = build_session()
-    install_mod(
-        "238222", tmp_path,
-        api_key=_FAKE_KEY,
+    CurseForgeModInstaller(
+        "238222",
+        _FAKE_KEY,
         minecraft_version="1.21.1",
         session=session,
         show_progress=False,
-    )
+    ).install(tmp_path)
 
     assert (tmp_path / "mods" / "jei-1.21.1-18.0.jar").exists()
 
@@ -290,14 +297,14 @@ def test_install_mod_with_loader_filter(tmp_path):
     )
 
     session = build_session()
-    install_mod(
-        "238222", tmp_path,
-        api_key=_FAKE_KEY,
+    CurseForgeModInstaller(
+        "238222",
+        _FAKE_KEY,
         minecraft_version="1.21.1",
         loader="fabric",
         session=session,
         show_progress=False,
-    )
+    ).install(tmp_path)
 
     assert (tmp_path / "mods" / "jei-1.21.1-18.0.jar").exists()
 
@@ -318,13 +325,13 @@ def test_install_mod_loader_filter_neoforge(tmp_path):
     )
 
     session = build_session()
-    install_mod(
-        "238222", tmp_path,
-        api_key=_FAKE_KEY,
+    CurseForgeModInstaller(
+        "238222",
+        _FAKE_KEY,
         loader="neoforge",
         session=session,
         show_progress=False,
-    )
+    ).install(tmp_path)
 
     assert (tmp_path / "mods" / "jei-1.21.1-18.0.jar").exists()
 
@@ -333,18 +340,23 @@ def test_install_mod_loader_filter_neoforge(tmp_path):
 def test_install_mod_verifies_sha1(tmp_path):
     """Files with hashes in the API response should be SHA-1 verified on download."""
     import hashlib
+
     jar_bytes = b"verified-jar-content"
     correct_sha1 = hashlib.sha1(jar_bytes).hexdigest()
 
     rsps_lib.add(
         rsps_lib.GET,
         f"{_API}/v1/mods/238222/files",
-        json={"data": [{
-            "id": 4593548,
-            "fileName": "jei-1.21.1-18.0.jar",
-            "downloadUrl": "https://edge.forgecdn.net/files/4593/548/jei-1.21.1-18.0.jar",
-            "hashes": [{"algo": 1, "value": correct_sha1}],
-        }]},
+        json={
+            "data": [
+                {
+                    "id": 4593548,
+                    "fileName": "jei-1.21.1-18.0.jar",
+                    "downloadUrl": "https://edge.forgecdn.net/files/4593/548/jei-1.21.1-18.0.jar",
+                    "hashes": [{"algo": 1, "value": correct_sha1}],
+                }
+            ]
+        },
     )
     rsps_lib.add(
         rsps_lib.GET,
@@ -353,7 +365,9 @@ def test_install_mod_verifies_sha1(tmp_path):
     )
 
     session = build_session()
-    install_mod("238222", tmp_path, api_key=_FAKE_KEY, session=session, show_progress=False)
+    CurseForgeModInstaller("238222", _FAKE_KEY, session=session, show_progress=False).install(
+        tmp_path
+    )
     assert (tmp_path / "mods" / "jei-1.21.1-18.0.jar").read_bytes() == jar_bytes
 
 
@@ -363,12 +377,16 @@ def test_install_mod_sha1_mismatch_raises(tmp_path):
     rsps_lib.add(
         rsps_lib.GET,
         f"{_API}/v1/mods/238222/files",
-        json={"data": [{
-            "id": 4593548,
-            "fileName": "jei-1.21.1-18.0.jar",
-            "downloadUrl": "https://edge.forgecdn.net/files/4593/548/jei-1.21.1-18.0.jar",
-            "hashes": [{"algo": 1, "value": "deadbeef" * 5}],  # wrong hash
-        }]},
+        json={
+            "data": [
+                {
+                    "id": 4593548,
+                    "fileName": "jei-1.21.1-18.0.jar",
+                    "downloadUrl": "https://edge.forgecdn.net/files/4593/548/jei-1.21.1-18.0.jar",
+                    "hashes": [{"algo": 1, "value": "deadbeef" * 5}],  # wrong hash
+                }
+            ]
+        },
     )
     rsps_lib.add(
         rsps_lib.GET,
@@ -378,6 +396,8 @@ def test_install_mod_sha1_mismatch_raises(tmp_path):
 
     session = build_session()
     with pytest.raises(ValueError, match="SHA-1 mismatch"):
-        install_mod("238222", tmp_path, api_key=_FAKE_KEY, session=session, show_progress=False)
+        CurseForgeModInstaller("238222", _FAKE_KEY, session=session, show_progress=False).install(
+            tmp_path
+        )
 
     assert not (tmp_path / "mods" / "jei-1.21.1-18.0.jar").exists()

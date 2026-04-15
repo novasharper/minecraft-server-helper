@@ -7,21 +7,34 @@ import responses as rsps_lib
 from responses import RequestsMock
 
 from mc_helper.http_client import build_session
-from mc_helper.server.vanilla import install, resolve_version
+from mc_helper.server.vanilla import VanillaInstaller, resolve_version
 
 # ── fixtures / helpers ────────────────────────────────────────────────────────
 
 _VERSION_MANIFEST = {
     "latest": {"release": "1.21.1", "snapshot": "24w14a"},
     "versions": [
-        {"id": "1.21.1", "type": "release", "url": "https://launchermeta.mojang.com/v1/packages/abc/1.21.1.json"},
-        {"id": "1.20.4", "type": "release", "url": "https://launchermeta.mojang.com/v1/packages/def/1.20.4.json"},
-        {"id": "24w14a", "type": "snapshot", "url": "https://launchermeta.mojang.com/v1/packages/ghi/24w14a.json"},
+        {
+            "id": "1.21.1",
+            "type": "release",
+            "url": "https://launchermeta.mojang.com/v1/packages/abc/1.21.1.json",
+        },
+        {
+            "id": "1.20.4",
+            "type": "release",
+            "url": "https://launchermeta.mojang.com/v1/packages/def/1.20.4.json",
+        },
+        {
+            "id": "24w14a",
+            "type": "snapshot",
+            "url": "https://launchermeta.mojang.com/v1/packages/ghi/24w14a.json",
+        },
     ],
 }
 
 _JAR_BYTES = b"fake-jar-content"
 _JAR_SHA1 = hashlib.sha1(_JAR_BYTES).hexdigest()
+
 
 def _version_manifest_detail(version_id: str, jar_url: str) -> dict:
     return {
@@ -38,9 +51,7 @@ def _version_manifest_detail(version_id: str, jar_url: str) -> dict:
 def _register_standard(responses: RequestsMock, version_id: str = "1.21.1") -> str:
     """Register all mocks needed for a standard vanilla install of *version_id*."""
     jar_url = f"https://launcher.mojang.com/v1/objects/fake/{version_id}-server.jar"
-    version_url = next(
-        v["url"] for v in _VERSION_MANIFEST["versions"] if v["id"] == version_id
-    )
+    version_url = next(v["url"] for v in _VERSION_MANIFEST["versions"] if v["id"] == version_id)
 
     responses.add(
         rsps_lib.GET,
@@ -112,7 +123,7 @@ def test_resolve_version_unknown_raises():
 def test_install_downloads_jar(tmp_path):
     _register_standard(rsps_lib, "1.21.1")
     session = build_session()
-    jar = install("1.21.1", tmp_path, session=session, show_progress=False)
+    jar = VanillaInstaller("1.21.1", session=session, show_progress=False).install(tmp_path)
 
     assert jar == tmp_path / "minecraft_server.1.21.1.jar"
     assert jar.exists()
@@ -129,7 +140,7 @@ def test_install_resolves_latest(tmp_path):
         json=_VERSION_MANIFEST,
     )
     session = build_session()
-    jar = install("LATEST", tmp_path, session=session, show_progress=False)
+    jar = VanillaInstaller("LATEST", session=session, show_progress=False).install(tmp_path)
     assert jar.name == "minecraft_server.1.21.1.jar"
 
 
@@ -154,7 +165,7 @@ def test_install_verifies_sha1(tmp_path):
 
     session = build_session()
     with pytest.raises(ValueError, match="SHA-1 mismatch"):
-        install("1.21.1", tmp_path, session=session, show_progress=False)
+        VanillaInstaller("1.21.1", session=session, show_progress=False).install(tmp_path)
 
 
 @rsps_lib.activate
@@ -172,4 +183,4 @@ def test_install_no_server_download_raises(tmp_path):
     )
     session = build_session()
     with pytest.raises(ValueError, match="No server download"):
-        install("1.21.1", tmp_path, session=session, show_progress=False)
+        VanillaInstaller("1.21.1", session=session, show_progress=False).install(tmp_path)

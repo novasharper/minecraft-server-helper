@@ -124,83 +124,100 @@ def _sha1_file(path: Path) -> str:
     return h.hexdigest()
 
 
-# ── Public install ────────────────────────────────────────────────────────────
+# ── Installer class ───────────────────────────────────────────────────────────
 
 
-def install(
-    output_dir: Path,
-    url: str | None = None,
-    github: str | None = None,
-    tag: str = "LATEST",
-    asset: str | None = None,
-    token: str | None = None,
-    strip_components: int = 0,
-    disable_mods_patterns: list[str] | None = None,
-    force_update: bool = False,
-    session: requests.Session | None = None,
-    show_progress: bool = True,
-) -> None:
-    """Download and extract a pre-assembled server pack into output_dir."""
-    if session is None:
-        headers: dict[str, str] = {}
-        if token:
-            headers["Authorization"] = f"Bearer {token}"
-        session = build_session(extra_headers=headers or None)
-    elif token:
-        session.headers["Authorization"] = f"Bearer {token}"
+class ServerPackInstaller:
+    """Downloads and extracts a pre-assembled server pack."""
 
-    output_dir.mkdir(parents=True, exist_ok=True)
-    manifest = Manifest(output_dir)
-    manifest.load()
+    def __init__(
+        self,
+        url: str | None = None,
+        github: str | None = None,
+        tag: str = "LATEST",
+        asset: str | None = None,
+        token: str | None = None,
+        strip_components: int = 0,
+        disable_mods_patterns: list[str] | None = None,
+        force_update: bool = False,
+        session: requests.Session | None = None,
+        show_progress: bool = True,
+    ) -> None:
+        self.url = url
+        self.github = github
+        self.tag = tag
+        self.asset = asset
+        self.strip_components = strip_components
+        self.disable_mods_patterns = disable_mods_patterns
+        self.force_update = force_update
+        self.show_progress = show_progress
 
-    # 1. Resolve download URL
-    if github:
-        download_url = _resolve_github_url(session, github, tag, asset)
-    elif url:
-        download_url = url
-    else:
-        raise ValueError("Either url or github must be provided")
+        if session is None:
+            headers: dict[str, str] = {}
+            if token:
+                headers["Authorization"] = f"Bearer {token}"
+            self.session = build_session(extra_headers=headers or None)
+        else:
+            self.session = session
+            if token:
+                self.session.headers["Authorization"] = f"Bearer {token}"
 
-    # Derive archive filename from URL
-    archive_name = download_url.split("?")[0].rstrip("/").split("/")[-1]
-    tmp_archive = output_dir / f".mc-helper-{archive_name}.tmp"
+    def install(self, output_dir: Path) -> None:
+        """Download and extract the server pack into *output_dir*."""
+        output_dir.mkdir(parents=True, exist_ok=True)
+        manifest = Manifest(output_dir)
+        manifest.load()
 
-    # 2. Download archive
-    download_file(download_url, tmp_archive, session=session, show_progress=show_progress)
+        # 1. Resolve download URL
+        if self.github:
+            download_url = _resolve_github_url(self.session, self.github, self.tag, self.asset)
+        elif self.url:
+            download_url = self.url
+        else:
+            raise ValueError("Either url or github must be provided")
 
-    try:
-        # 3. Check SHA-1 for idempotency
-        sha1 = _sha1_file(tmp_archive)
-        if not force_update and manifest.pack_sha1 == sha1:
-            return
+        # Derive archive filename from URL
+        archive_name = download_url.split("?")[0].rstrip("/").split("/")[-1]
+        tmp_archive = output_dir / f".mc-helper-{archive_name}.tmp"
 
-        # 4. Extract into temp dir
-        with tempfile.TemporaryDirectory() as tmp_str:
-            tmp_dir = Path(tmp_str)
-            _extract(tmp_archive, tmp_dir, strip_components, original_name=archive_name)
+        # 2. Download archive
+        download_file(
+            download_url, tmp_archive, session=self.session, show_progress=self.show_progress
+        )
 
-            # 5. Find content root
-            content_root = find_content_root(tmp_dir)
+        try:
+            # 3. Check SHA-1 for idempotency
+            sha1 = _sha1_file(tmp_archive)
+            if not self.force_update and manifest.pack_sha1 == sha1:
+                return
 
-            # 7. Rename disable_mods entries
-            if disable_mods_patterns:
-                mods_dir = content_root / "mods"
-                if mods_dir.is_dir():
-                    disable_mods(mods_dir, disable_mods_patterns)
+            # 4. Extract into temp dir
+            with tempfile.TemporaryDirectory() as tmp_str:
+                tmp_dir = Path(tmp_str)
+                _extract(tmp_archive, tmp_dir, self.strip_components, original_name=archive_name)
 
-            # 6. Copy content root into output_dir
-            for item in content_root.iterdir():
-                dest = output_dir / item.name
-                if item.is_dir():
-                    if dest.exists():
-                        shutil.rmtree(dest)
-                    shutil.copytree(item, dest)
-                else:
-                    shutil.copy2(item, dest)
+                # 5. Find content root
+                content_root = find_content_root(tmp_dir)
 
-        # 8. Save SHA-1 in manifest
-        manifest.pack_sha1 = sha1
-        manifest.save()
+                # 7. Rename disable_mods entries
+                if self.disable_mods_patterns:
+                    mods_dir = content_root / "mods"
+                    if mods_dir.is_dir():
+                        disable_mods(mods_dir, self.disable_mods_patterns)
 
-    finally:
-        tmp_archive.unlink(missing_ok=True)
+                # 6. Copy content root into output_dir
+                for item in content_root.iterdir():
+                    dest = output_dir / item.name
+                    if item.is_dir():
+                        if dest.exists():
+                            shutil.rmtree(dest)
+                        shutil.copytree(item, dest)
+                    else:
+                        shutil.copy2(item, dest)
+
+            # 8. Save SHA-1 in manifest
+            manifest.pack_sha1 = sha1
+            manifest.save()
+
+        finally:
+            tmp_archive.unlink(missing_ok=True)

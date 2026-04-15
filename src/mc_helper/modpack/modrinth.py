@@ -54,9 +54,9 @@ def resolve_version(
 
     params: list[str] = []
     if minecraft_version:
-        params.append(f"game_versions=[\"{minecraft_version}\"]")
+        params.append(f'game_versions=["{minecraft_version}"]')
     if loader:
-        params.append(f"loaders=[\"{loader}\"]")
+        params.append(f'loaders=["{loader}"]')
     query = "&".join(params)
     url = f"{_API_BASE}/project/{project}/versions"
     if query:
@@ -103,97 +103,116 @@ def _should_include(file_entry: dict, exclusions: list[str]) -> bool:
     return True
 
 
-def install(
-    project: str,
-    output_dir: Path,
-    minecraft_version: str | None = None,
-    loader: str | None = None,
-    version_type: str = "release",
-    requested_version: str = "LATEST",
-    exclude_mods: list[str] | None = None,
-    overrides_exclusions: list[str] | None = None,
-    session: requests.Session | None = None,
-    show_progress: bool = True,
-) -> dict:
-    """Install a Modrinth modpack into output_dir.
+class ModrinthPackInstaller:
+    """Installs a Modrinth modpack."""
 
-    Returns the index dict (modrinth.index.json contents).
-    """
-    if session is None:
-        session = build_session()
-    exclude_mods = exclude_mods or []
-    overrides_exclusions = overrides_exclusions or []
+    def __init__(
+        self,
+        project: str,
+        minecraft_version: str | None = None,
+        loader: str | None = None,
+        version_type: str = "release",
+        requested_version: str = "LATEST",
+        exclude_mods: list[str] | None = None,
+        overrides_exclusions: list[str] | None = None,
+        session: requests.Session | None = None,
+        show_progress: bool = True,
+    ) -> None:
+        self.project = project
+        self.minecraft_version = minecraft_version
+        self.loader = loader
+        self.version_type = version_type
+        self.requested_version = requested_version
+        self.exclude_mods = exclude_mods or []
+        self.overrides_exclusions = overrides_exclusions or []
+        self.session = session or build_session()
+        self.show_progress = show_progress
 
-    manifest = Manifest(output_dir)
-    manifest.load()
+    def install(self, output_dir: Path) -> dict:
+        """Install the Modrinth modpack into *output_dir*.
 
-    # 1. Resolve version
-    version = resolve_version(
-        session, project, minecraft_version, loader, version_type, requested_version
-    )
-    mrpack_url = _mrpack_url(version)
+        Returns the index dict (modrinth.index.json contents).
+        """
+        manifest = Manifest(output_dir)
+        manifest.load()
 
-    # 2. Download .mrpack to a temp file
-    tmp_mrpack = output_dir / ".mc-helper-mrpack.tmp"
-    output_dir.mkdir(parents=True, exist_ok=True)
-    download_file(mrpack_url, tmp_mrpack, session=session, show_progress=show_progress)
+        # 1. Resolve version
+        version = resolve_version(
+            self.session,
+            self.project,
+            self.minecraft_version,
+            self.loader,
+            self.version_type,
+            self.requested_version,
+        )
+        mrpack_url = _mrpack_url(version)
 
-    try:
-        with zipfile.ZipFile(tmp_mrpack) as zf:
-            # 3. Parse modrinth.index.json
-            index = json.loads(zf.read("modrinth.index.json"))
+        # 2. Download .mrpack to a temp file
+        tmp_mrpack = output_dir / ".mc-helper-mrpack.tmp"
+        output_dir.mkdir(parents=True, exist_ok=True)
+        download_file(
+            mrpack_url, tmp_mrpack, session=self.session, show_progress=self.show_progress
+        )
 
-            # 4+5. Download modpack files (parallel)
-            files_to_install = [
-                f for f in index.get("files", [])
-                if _should_include(f, exclude_mods)
-            ]
-            new_files: list[str] = []
+        try:
+            with zipfile.ZipFile(tmp_mrpack) as zf:
+                # 3. Parse modrinth.index.json
+                index = json.loads(zf.read("modrinth.index.json"))
 
-            def _download_entry(entry: dict) -> str:
-                rel_path = entry["path"]
-                dest = output_dir / rel_path
-                url = entry["downloads"][0]
-                hashes = entry.get("hashes", {})
-                sha512 = hashes.get("sha512")
-                sha1 = hashes.get("sha1") if not sha512 else None
-                download_file(
-                    url, dest, session=session,
-                    expected_sha512=sha512, expected_sha1=sha1,
-                    show_progress=False,
+                # 4+5. Download modpack files (parallel)
+                files_to_install = [
+                    f for f in index.get("files", []) if _should_include(f, self.exclude_mods)
+                ]
+                new_files: list[str] = []
+                session = self.session
+
+                def _download_entry(entry: dict) -> str:
+                    rel_path = entry["path"]
+                    dest = output_dir / rel_path
+                    url = entry["downloads"][0]
+                    hashes = entry.get("hashes", {})
+                    sha512 = hashes.get("sha512")
+                    sha1 = hashes.get("sha1") if not sha512 else None
+                    download_file(
+                        url,
+                        dest,
+                        session=session,
+                        expected_sha512=sha512,
+                        expected_sha1=sha1,
+                        show_progress=False,
+                    )
+                    return rel_path
+
+                with ThreadPoolExecutor(max_workers=_MAX_WORKERS) as pool:
+                    futures = {pool.submit(_download_entry, f): f for f in files_to_install}
+                    for fut in as_completed(futures):
+                        new_files.append(fut.result())
+
+                # 6. Extract overrides
+                override_files = extract_zip_overrides(
+                    zf, output_dir, ["overrides", "server-overrides"], self.overrides_exclusions
                 )
-                return rel_path
+                new_files.extend(override_files)
 
-            with ThreadPoolExecutor(max_workers=_MAX_WORKERS) as pool:
-                futures = {pool.submit(_download_entry, f): f for f in files_to_install}
-                for fut in as_completed(futures):
-                    new_files.append(fut.result())
+            # 8. Cleanup stale + save manifest
+            manifest.cleanup_stale(output_dir, new_files)
+            manifest.files = new_files
+            deps = index.get("dependencies", {})
+            manifest.mc_version = deps.get("minecraft", self.minecraft_version)
+            _loader_key_map = {
+                "fabric-loader": "fabric",
+                "quilt-loader": "quilt",
+                "forge": "forge",
+                "neoforge": "neoforge",
+            }
+            for dep_key, normalized in _loader_key_map.items():
+                if dep_key in deps:
+                    manifest.loader_type = normalized
+                    manifest.loader_version = deps[dep_key]
+                    break
+            manifest.save()
 
-            # 6. Extract overrides
-            override_files = extract_zip_overrides(
-                zf, output_dir, ["overrides", "server-overrides"], overrides_exclusions
-            )
-            new_files.extend(override_files)
+        finally:
+            tmp_mrpack.unlink(missing_ok=True)
 
-        # 8. Cleanup stale + save manifest
-        manifest.cleanup_stale(output_dir, new_files)
-        manifest.files = new_files
-        deps = index.get("dependencies", {})
-        manifest.mc_version = deps.get("minecraft", minecraft_version)
-        _loader_key_map = {
-            "fabric-loader": "fabric",
-            "quilt-loader": "quilt",
-            "forge": "forge",
-            "neoforge": "neoforge",
-        }
-        for dep_key, normalized in _loader_key_map.items():
-            if dep_key in deps:
-                manifest.loader_type = normalized
-                manifest.loader_version = deps[dep_key]
-                break
-        manifest.save()
-
-    finally:
-        tmp_mrpack.unlink(missing_ok=True)
-
-    return index
+        return index

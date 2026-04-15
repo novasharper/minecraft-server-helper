@@ -9,9 +9,9 @@ import responses as rsps_lib
 
 from mc_helper.http_client import build_session
 from mc_helper.modpack.curseforge import (
+    CurseForgePackInstaller,
     _download_url_for_file,
     _should_include,
-    install,
 )
 
 _API = "https://api.curseforge.com"
@@ -114,7 +114,9 @@ def test_resolve_by_slug(tmp_path):
     )
 
     session = build_session()
-    result = install("fake-key", tmp_path, slug="test-pack", session=session, show_progress=False)
+    result = CurseForgePackInstaller(
+        "fake-key", slug="test-pack", session=session, show_progress=False
+    ).install(tmp_path)
     assert result["name"] == "Test Pack"
 
 
@@ -133,7 +135,9 @@ def test_resolve_by_mod_id(tmp_path):
     rsps_lib.add(rsps_lib.GET, mod_file["downloadUrl"], body=pack_zip)
 
     session = build_session()
-    result = install("fake-key", tmp_path, mod_id=mod_id, session=session, show_progress=False)
+    result = CurseForgePackInstaller(
+        "fake-key", mod_id=mod_id, session=session, show_progress=False
+    ).install(tmp_path)
     assert result["name"] == "Test Pack"
 
 
@@ -155,18 +159,22 @@ def test_install_downloads_mods(tmp_path):
     pack_zip = _make_modpack_zip(manifest_data)
 
     rsps_lib.add(
-        rsps_lib.GET, f"{_API}/v1/mods/{mod_id}/files",
+        rsps_lib.GET,
+        f"{_API}/v1/mods/{mod_id}/files",
         json={"data": [pack_file]},
     )
     rsps_lib.add(rsps_lib.GET, pack_file["downloadUrl"], body=pack_zip)
     rsps_lib.add(
-        rsps_lib.GET, f"{_API}/v1/mods/100/files/{mod_file_id}",
+        rsps_lib.GET,
+        f"{_API}/v1/mods/100/files/{mod_file_id}",
         json={"data": dep_mod_file},
     )
     rsps_lib.add(rsps_lib.GET, dep_mod_file["downloadUrl"], body=b"fake-jar")
 
     session = build_session()
-    install("fake-key", tmp_path, mod_id=mod_id, session=session, show_progress=False)
+    CurseForgePackInstaller(
+        "fake-key", mod_id=mod_id, session=session, show_progress=False
+    ).install(tmp_path)
 
     assert (tmp_path / "mods" / "jei-1.0.jar").read_bytes() == b"fake-jar"
 
@@ -183,13 +191,16 @@ def test_install_extracts_overrides(tmp_path):
     )
 
     rsps_lib.add(
-        rsps_lib.GET, f"{_API}/v1/mods/{mod_id}/files",
+        rsps_lib.GET,
+        f"{_API}/v1/mods/{mod_id}/files",
         json={"data": [pack_file]},
     )
     rsps_lib.add(rsps_lib.GET, pack_file["downloadUrl"], body=pack_zip)
 
     session = build_session()
-    install("fake-key", tmp_path, mod_id=mod_id, session=session, show_progress=False)
+    CurseForgePackInstaller(
+        "fake-key", mod_id=mod_id, session=session, show_progress=False
+    ).install(tmp_path)
 
     assert (tmp_path / "config" / "server.cfg").read_bytes() == b"key=value"
 
@@ -203,15 +214,19 @@ def test_install_writes_manifest(tmp_path):
     pack_zip = _make_modpack_zip(_minimal_manifest())
 
     rsps_lib.add(
-        rsps_lib.GET, f"{_API}/v1/mods/{mod_id}/files",
+        rsps_lib.GET,
+        f"{_API}/v1/mods/{mod_id}/files",
         json={"data": [pack_file]},
     )
     rsps_lib.add(rsps_lib.GET, pack_file["downloadUrl"], body=pack_zip)
 
     session = build_session()
-    install("fake-key", tmp_path, mod_id=mod_id, session=session, show_progress=False)
+    CurseForgePackInstaller(
+        "fake-key", mod_id=mod_id, session=session, show_progress=False
+    ).install(tmp_path)
 
     from mc_helper.manifest import Manifest
+
     m = Manifest(tmp_path)
     m.load()
     assert m.mc_version == "1.21.1"
@@ -222,7 +237,7 @@ def test_install_writes_manifest(tmp_path):
 @rsps_lib.activate
 def test_install_no_slug_no_mod_id_raises(tmp_path):
     with pytest.raises(ValueError, match="slug or mod_id"):
-        install("fake-key", tmp_path, show_progress=False)
+        CurseForgePackInstaller("fake-key", show_progress=False).install(tmp_path)
 
 
 # ── hash verification for mod downloads ──────────────────────────────────────
@@ -251,22 +266,27 @@ def test_install_verifies_mod_hash(tmp_path):
     pack_zip = _make_modpack_zip(manifest_data)
 
     rsps_lib.add(
-        rsps_lib.GET, f"{_API}/v1/mods/{mod_id}/files",
+        rsps_lib.GET,
+        f"{_API}/v1/mods/{mod_id}/files",
         json={"data": [pack_file]},
     )
     rsps_lib.add(rsps_lib.GET, pack_file["downloadUrl"], body=pack_zip)
     rsps_lib.add(
-        rsps_lib.GET, f"{_API}/v1/mods/100/files/{mod_file_id}",
+        rsps_lib.GET,
+        f"{_API}/v1/mods/100/files/{mod_file_id}",
         json={"data": dep_mod_file},
     )
     rsps_lib.add(
-        rsps_lib.GET, dep_mod_file["downloadUrl"],
+        rsps_lib.GET,
+        dep_mod_file["downloadUrl"],
         body=b"fake-jar-content",  # hash of this won't match "aabbccdd" * 5
     )
 
     session = build_session()
     with pytest.raises(ValueError, match="SHA-1 mismatch"):
-        install("fake-key", tmp_path, mod_id=mod_id, session=session, show_progress=False)
+        CurseForgePackInstaller(
+            "fake-key", mod_id=mod_id, session=session, show_progress=False
+        ).install(tmp_path)
 
 
 @rsps_lib.activate
@@ -292,16 +312,20 @@ def test_install_skips_hash_when_none(tmp_path):
     pack_zip = _make_modpack_zip(manifest_data)
 
     rsps_lib.add(
-        rsps_lib.GET, f"{_API}/v1/mods/{mod_id}/files",
+        rsps_lib.GET,
+        f"{_API}/v1/mods/{mod_id}/files",
         json={"data": [pack_file]},
     )
     rsps_lib.add(rsps_lib.GET, pack_file["downloadUrl"], body=pack_zip)
     rsps_lib.add(
-        rsps_lib.GET, f"{_API}/v1/mods/100/files/{mod_file_id}",
+        rsps_lib.GET,
+        f"{_API}/v1/mods/100/files/{mod_file_id}",
         json={"data": dep_mod_file},
     )
     rsps_lib.add(rsps_lib.GET, dep_mod_file["downloadUrl"], body=b"fake-jar-content")
 
     session = build_session()
-    install("fake-key", tmp_path, mod_id=mod_id, session=session, show_progress=False)
+    CurseForgePackInstaller(
+        "fake-key", mod_id=mod_id, session=session, show_progress=False
+    ).install(tmp_path)
     assert (tmp_path / "mods" / "jei-1.0.jar").exists()

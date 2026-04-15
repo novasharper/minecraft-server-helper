@@ -10,11 +10,11 @@ import responses as rsps_lib
 
 from mc_helper.http_client import build_session
 from mc_helper.pack.server_pack import (
+    ServerPackInstaller,
     _extract_tar,
     _extract_zip,
     _resolve_github_url,
     _sha1_file,
-    install,
 )
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -137,10 +137,12 @@ def test_resolve_github_asset_glob():
     rsps_lib.add(
         rsps_lib.GET,
         "https://api.github.com/repos/owner/repo/releases/latest",
-        json=_github_release([
-            _asset("client.zip", "https://example.com/client.zip"),
-            _asset("server.zip", "https://example.com/server.zip"),
-        ]),
+        json=_github_release(
+            [
+                _asset("client.zip", "https://example.com/client.zip"),
+                _asset("server.zip", "https://example.com/server.zip"),
+            ]
+        ),
     )
     session = build_session()
     url = _resolve_github_url(session, "owner/repo", "LATEST", "*server*")
@@ -168,7 +170,9 @@ def test_install_direct_url_zip(tmp_path):
     rsps_lib.add(rsps_lib.GET, "https://example.com/pack.zip", body=zip_bytes)
 
     session = build_session()
-    install(tmp_path, url="https://example.com/pack.zip", session=session, show_progress=False)
+    ServerPackInstaller(
+        url="https://example.com/pack.zip", session=session, show_progress=False
+    ).install(tmp_path)
 
     assert (tmp_path / "mods" / "jei.jar").read_bytes() == b"jar-data"
     assert (tmp_path / "config" / "a.cfg").read_bytes() == b"cfg"
@@ -180,7 +184,9 @@ def test_install_direct_url_tar_gz(tmp_path):
     rsps_lib.add(rsps_lib.GET, "https://example.com/pack.tar.gz", body=tar_bytes)
 
     session = build_session()
-    install(tmp_path, url="https://example.com/pack.tar.gz", session=session, show_progress=False)
+    ServerPackInstaller(
+        url="https://example.com/pack.tar.gz", session=session, show_progress=False
+    ).install(tmp_path)
 
     assert (tmp_path / "mods" / "mod.jar").read_bytes() == b"jar-data"
 
@@ -196,7 +202,9 @@ def test_install_github(tmp_path):
     rsps_lib.add(rsps_lib.GET, "https://example.com/server.zip", body=zip_bytes)
 
     session = build_session()
-    install(tmp_path, github="owner/repo", asset="*server*", session=session, show_progress=False)
+    ServerPackInstaller(
+        github="owner/repo", asset="*server*", session=session, show_progress=False
+    ).install(tmp_path)
 
     assert (tmp_path / "mods" / "mod.jar").read_bytes() == b"jar"
 
@@ -207,6 +215,7 @@ def test_install_skips_if_sha1_matches(tmp_path):
     sha1 = hashlib.sha1(zip_bytes).hexdigest()
 
     from mc_helper.manifest import Manifest
+
     m = Manifest(tmp_path)
     m.pack_sha1 = sha1
     m.save()
@@ -215,7 +224,9 @@ def test_install_skips_if_sha1_matches(tmp_path):
     rsps_lib.add(rsps_lib.GET, "https://example.com/pack.zip", body=zip_bytes)
 
     session = build_session()
-    install(tmp_path, url="https://example.com/pack.zip", session=session, show_progress=False)
+    ServerPackInstaller(
+        url="https://example.com/pack.zip", session=session, show_progress=False
+    ).install(tmp_path)
 
     # File should NOT be extracted since sha1 matches
     assert not (tmp_path / "mods" / "mod.jar").exists()
@@ -227,6 +238,7 @@ def test_install_force_update_ignores_sha1(tmp_path):
     sha1 = hashlib.sha1(zip_bytes).hexdigest()
 
     from mc_helper.manifest import Manifest
+
     m = Manifest(tmp_path)
     m.pack_sha1 = sha1
     m.save()
@@ -234,13 +246,12 @@ def test_install_force_update_ignores_sha1(tmp_path):
     rsps_lib.add(rsps_lib.GET, "https://example.com/pack.zip", body=zip_bytes)
 
     session = build_session()
-    install(
-        tmp_path,
+    ServerPackInstaller(
         url="https://example.com/pack.zip",
         force_update=True,
         session=session,
         show_progress=False,
-    )
+    ).install(tmp_path)
 
     assert (tmp_path / "mods" / "mod.jar").read_bytes() == b"jar"
 
@@ -251,13 +262,12 @@ def test_install_disable_mods(tmp_path):
     rsps_lib.add(rsps_lib.GET, "https://example.com/pack.zip", body=zip_bytes)
 
     session = build_session()
-    install(
-        tmp_path,
+    ServerPackInstaller(
         url="https://example.com/pack.zip",
         disable_mods_patterns=["optifine.jar"],
         session=session,
         show_progress=False,
-    )
+    ).install(tmp_path)
 
     assert not (tmp_path / "mods" / "optifine.jar").exists()
     assert (tmp_path / "mods" / "optifine.jar.disabled").exists()
@@ -266,4 +276,4 @@ def test_install_disable_mods(tmp_path):
 
 def test_install_no_source_raises(tmp_path):
     with pytest.raises(ValueError, match="Either url or github"):
-        install(tmp_path, show_progress=False)
+        ServerPackInstaller(show_progress=False).install(tmp_path)

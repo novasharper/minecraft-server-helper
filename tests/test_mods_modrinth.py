@@ -4,7 +4,7 @@ import pytest
 import responses as rsps_lib
 
 from mc_helper.http_client import build_session
-from mc_helper.mods.modrinth import install_mod, parse_mod_spec
+from mc_helper.mods.modrinth import ModrinthModInstaller, parse_mod_spec
 
 _API = "https://api.modrinth.com/v2"
 
@@ -74,11 +74,13 @@ def test_install_mod_downloads_jar(tmp_path):
     )
 
     session = build_session()
-    path = install_mod(
-        "fabric-api", tmp_path,
-        minecraft_version="1.21.1", loader="fabric",
-        session=session, show_progress=False,
-    )
+    path = ModrinthModInstaller(
+        "fabric-api",
+        minecraft_version="1.21.1",
+        loader="fabric",
+        session=session,
+        show_progress=False,
+    ).install(tmp_path)
 
     assert path == "mods/fabric-api-0.100.0+1.21.1.jar"
     assert (tmp_path / "mods" / "fabric-api-0.100.0+1.21.1.jar").read_bytes() == jar_bytes
@@ -88,7 +90,8 @@ def test_install_mod_downloads_jar(tmp_path):
 def test_install_mod_specific_version(tmp_path):
     jar_bytes = b"specific-version-jar"
     version = _make_version(
-        version_number="0.90.0+1.20.4", filename="fabric-api-0.90.0+1.20.4.jar",
+        version_number="0.90.0+1.20.4",
+        filename="fabric-api-0.90.0+1.20.4.jar",
         sha1=_SHA1[b"specific-version-jar"],
     )
     rsps_lib.add(rsps_lib.GET, f"{_API}/project/fabric-api/versions", json=[version])
@@ -99,10 +102,11 @@ def test_install_mod_specific_version(tmp_path):
     )
 
     session = build_session()
-    path = install_mod(
-        "fabric-api:0.90.0+1.20.4", tmp_path,
-        session=session, show_progress=False,
-    )
+    path = ModrinthModInstaller(
+        "fabric-api:0.90.0+1.20.4",
+        session=session,
+        show_progress=False,
+    ).install(tmp_path)
 
     assert path == "mods/fabric-api-0.90.0+1.20.4.jar"
     assert (tmp_path / "mods" / "fabric-api-0.90.0+1.20.4.jar").read_bytes() == jar_bytes
@@ -118,7 +122,7 @@ def test_install_mod_creates_mods_subdir(tmp_path):
     )
 
     session = build_session()
-    install_mod("fabric-api", tmp_path, session=session, show_progress=False)
+    ModrinthModInstaller("fabric-api", session=session, show_progress=False).install(tmp_path)
 
     assert (tmp_path / "mods").is_dir()
 
@@ -145,7 +149,7 @@ def test_install_mod_falls_back_to_first_file_when_no_primary(tmp_path):
     rsps_lib.add(rsps_lib.GET, "https://cdn.modrinth.com/mod-1.0.0.jar", body=jar_bytes)
 
     session = build_session()
-    path = install_mod("some-mod", tmp_path, session=session, show_progress=False)
+    path = ModrinthModInstaller("some-mod", session=session, show_progress=False).install(tmp_path)
 
     assert path == "mods/mod-1.0.0.jar"
     assert (tmp_path / "mods" / "mod-1.0.0.jar").read_bytes() == jar_bytes
@@ -157,10 +161,12 @@ def test_install_mod_version_not_found_raises(tmp_path):
 
     session = build_session()
     with pytest.raises(ValueError, match="No Modrinth versions"):
-        install_mod(
-            "no-such-mod", tmp_path,
-            minecraft_version="1.21.1", session=session, show_progress=False,
-        )
+        ModrinthModInstaller(
+            "no-such-mod",
+            minecraft_version="1.21.1",
+            session=session,
+            show_progress=False,
+        ).install(tmp_path)
 
 
 @rsps_lib.activate
@@ -168,14 +174,16 @@ def test_install_mod_beta_fallback(tmp_path):
     """When only beta versions exist, the installer should still pick one."""
     jar_bytes = b"beta-jar"
     version = _make_version(
-        version_type="beta", filename="mod-2.0-beta.jar", version_number="2.0-beta",
+        version_type="beta",
+        filename="mod-2.0-beta.jar",
+        version_number="2.0-beta",
         sha1=_SHA1[b"beta-jar"],
     )
     rsps_lib.add(rsps_lib.GET, f"{_API}/project/beta-mod/versions", json=[version])
     rsps_lib.add(rsps_lib.GET, "https://cdn.modrinth.com/mod-2.0-beta.jar", body=jar_bytes)
 
     session = build_session()
-    path = install_mod("beta-mod", tmp_path, session=session, show_progress=False)
+    path = ModrinthModInstaller("beta-mod", session=session, show_progress=False).install(tmp_path)
 
     assert path == "mods/mod-2.0-beta.jar"
 
@@ -184,6 +192,7 @@ def test_install_mod_beta_fallback(tmp_path):
 def test_install_mod_prefers_sha512_over_sha1(tmp_path):
     """When sha512 is present, it is used for verification and sha1 is ignored."""
     import hashlib
+
     jar_bytes = b"data"
     sha512_hex = hashlib.sha512(jar_bytes).hexdigest()
     # sha1 is deliberately wrong — should not be checked when sha512 is present
@@ -206,7 +215,7 @@ def test_install_mod_prefers_sha512_over_sha1(tmp_path):
     rsps_lib.add(rsps_lib.GET, "https://cdn.modrinth.com/mod-1.0.0.jar", body=jar_bytes)
 
     session = build_session()
-    path = install_mod("sha-mod", tmp_path, session=session, show_progress=False)
+    path = ModrinthModInstaller("sha-mod", session=session, show_progress=False).install(tmp_path)
 
     assert path == "mods/mod-1.0.0.jar"
     assert (tmp_path / "mods" / "mod-1.0.0.jar").read_bytes() == jar_bytes

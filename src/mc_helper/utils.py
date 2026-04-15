@@ -21,7 +21,7 @@ def extract_zip_overrides(
         for name in zf.namelist():
             if not name.startswith(prefix) or name == prefix:
                 continue
-            rel = name[len(prefix):]
+            rel = name[len(prefix) :]
             if not rel:
                 continue
             if any(fnmatch.fnmatch(rel, pat) for pat in exclusions):
@@ -42,6 +42,7 @@ def compare_versions(a: str, b: str) -> int:
     Returns -1 if a < b, 0 if a == b, 1 if a > b.
     Non-numeric segments are compared lexicographically.
     """
+
     def _parts(v: str) -> list[int | str]:
         parts: list[int | str] = []
         for seg in v.split("."):

@@ -124,8 +124,8 @@ class TestWriteServerFiles:
         assert "# Minecraft server properties" in result
         assert "# Another comment" in result
         assert "level-seed=abc123" in result
-        assert "difficulty=normal" in result   # overwritten by config
-        assert "max-players=20" in result      # overwritten by config
+        assert "difficulty=normal" in result  # overwritten by config
+        assert "max-players=20" in result  # overwritten by config
 
     def test_server_properties_merge_appends_new_keys(self, tmp_path):
         """Keys in config that are not in the existing file must be appended."""
@@ -161,9 +161,10 @@ class TestInstallServerJar:
 
         config = self._config(tmp_path, "vanilla")
         fake_jar = tmp_path / "minecraft_server.1.21.1.jar"
-        with patch("mc_helper.server.vanilla.install", return_value=fake_jar) as mock_install:
+        with patch("mc_helper.server.vanilla.VanillaInstaller") as MockInstaller:
+            MockInstaller.return_value.install.return_value = fake_jar
             result = _install_server_jar(config, tmp_path, dry_run=False)
-        mock_install.assert_called_once()
+        MockInstaller.assert_called_once()
         assert result == fake_jar
 
     def test_fabric_dispatches(self, tmp_path):
@@ -171,18 +172,20 @@ class TestInstallServerJar:
 
         config = self._config(tmp_path, "fabric")
         fake_jar = tmp_path / "fabric-server-launch.jar"
-        with patch("mc_helper.server.fabric.install", return_value=fake_jar) as mock_install:
+        with patch("mc_helper.server.fabric.FabricInstaller") as MockInstaller:
+            MockInstaller.return_value.install.return_value = fake_jar
             result = _install_server_jar(config, tmp_path, dry_run=False)
-        mock_install.assert_called_once()
+        MockInstaller.assert_called_once()
         assert result == fake_jar
 
     def test_forge_dispatches_returns_none(self, tmp_path):
         from mc_helper.cli import _install_server_jar
 
         config = self._config(tmp_path, "forge")
-        with patch("mc_helper.server.forge.install") as mock_install:
+        with patch("mc_helper.server.forge.ForgeInstaller") as MockInstaller:
+            MockInstaller.return_value.install.return_value = None
             result = _install_server_jar(config, tmp_path, dry_run=False)
-        mock_install.assert_called_once()
+        MockInstaller.assert_called_once()
         assert result is None
 
     def test_paper_dispatches(self, tmp_path):
@@ -190,7 +193,8 @@ class TestInstallServerJar:
 
         config = self._config(tmp_path, "paper")
         fake_jar = tmp_path / "paper-1.21.1-123.jar"
-        with patch("mc_helper.server.paper.install", return_value=fake_jar):
+        with patch("mc_helper.server.paper.PaperInstaller") as MockInstaller:
+            MockInstaller.return_value.install.return_value = fake_jar
             result = _install_server_jar(config, tmp_path, dry_run=False)
         assert result == fake_jar
 
@@ -199,7 +203,8 @@ class TestInstallServerJar:
 
         config = self._config(tmp_path, "purpur")
         fake_jar = tmp_path / "purpur-1.21.1-2271.jar"
-        with patch("mc_helper.server.purpur.install", return_value=fake_jar):
+        with patch("mc_helper.server.purpur.PurpurInstaller") as MockInstaller:
+            MockInstaller.return_value.install.return_value = fake_jar
             result = _install_server_jar(config, tmp_path, dry_run=False)
         assert result == fake_jar
 
@@ -212,21 +217,21 @@ class TestInstallServerJar:
         data["server"]["output_dir"] = str(tmp_path)
         cfg_file = _write_config(tmp_path, data)
         from mc_helper.config import load_config
+
         config = load_config(cfg_file)
 
         fake_jar = tmp_path / "paper-1.21.4-200.jar"
         with (
-            patch(
-                "mc_helper.cli.resolve_version", return_value="1.21.4"
-            ) as mock_resolve,
-            patch("mc_helper.server.paper.install", return_value=fake_jar) as mock_paper,
+            patch("mc_helper.cli.resolve_version", return_value="1.21.4") as mock_resolve,
+            patch("mc_helper.server.paper.PaperInstaller") as MockPaper,
         ):
+            MockPaper.return_value.install.return_value = fake_jar
             result = _install_server_jar(config, tmp_path, dry_run=False)
 
         mock_resolve.assert_called_once_with(ANY, "LATEST")
-        # Paper must be called with the resolved version, not the string "LATEST"
-        call_args = mock_paper.call_args
-        assert call_args.args[0] == "1.21.4"
+        # PaperInstaller must be constructed with the resolved version, not "LATEST"
+        MockPaper.assert_called_once()
+        assert MockPaper.call_args.args[0] == "1.21.4"
         assert result == fake_jar
 
 
@@ -315,7 +320,8 @@ class TestCmdSetupDispatch:
         from mc_helper.cli import _cmd_setup
 
         fake_jar = override_dir / "minecraft_server.1.21.1.jar"
-        with patch("mc_helper.server.vanilla.install", return_value=fake_jar):
+        with patch("mc_helper.server.vanilla.VanillaInstaller") as MockInstaller:
+            MockInstaller.return_value.install.return_value = fake_jar
             _cmd_setup(self._make_args(cfg_file, output_dir=override_dir))
 
         assert (override_dir / "eula.txt").exists()
