@@ -47,20 +47,51 @@ def install_mod(
     version_type: str = "release",
     session: requests.Session | None = None,
     show_progress: bool = True,
+    _installed_projects: set[str] | None = None,
 ) -> str:
     """Download a single Modrinth mod JAR to ``output_dir/mods/``.
 
     Returns the relative path written (e.g. ``"mods/fabric-api-0.x.x.jar"``).
+    Required dependencies are fetched recursively.
     """
     if session is None:
         session = build_session()
+    if _installed_projects is None:
+        _installed_projects = set()
 
     project, requested_version = parse_mod_spec(spec)
     version = resolve_version(
         session, project, minecraft_version, loader, version_type, requested_version
     )
-    url, filename, sha1 = _pick_primary_file(version)
 
+    # Guard against cycles / duplicate downloads
+    project_id = version.get("project_id", project)
+    if project_id in _installed_projects:
+        return str(Path("mods") / _pick_primary_file(version)[1])
+    _installed_projects.add(project_id)
+
+    url, filename, sha1 = _pick_primary_file(version)
     dest = output_dir / "mods" / filename
     download_file(url, dest, session=session, expected_sha1=sha1, show_progress=show_progress)
+
+    # Recursively install required dependencies
+    for dep in version.get("dependencies", []):
+        if dep.get("dependency_type") != "required":
+            continue
+        dep_project_id = dep.get("project_id")
+        if not dep_project_id or dep_project_id in _installed_projects:
+            continue
+        dep_version_id = dep.get("version_id")
+        dep_spec = f"{dep_project_id}:{dep_version_id}" if dep_version_id else dep_project_id
+        install_mod(
+            dep_spec,
+            output_dir,
+            minecraft_version=minecraft_version,
+            loader=loader,
+            version_type=version_type,
+            session=session,
+            show_progress=show_progress,
+            _installed_projects=_installed_projects,
+        )
+
     return str(Path("mods") / filename)

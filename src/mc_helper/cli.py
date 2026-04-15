@@ -164,17 +164,24 @@ def _write_server_files(config, output_dir: Path, jar_path: Path | None, dry_run
         output_dir.mkdir(parents=True, exist_ok=True)
         eula_path.write_text(f"eula={eula_value}\n")
 
-    # server.properties
+    # server.properties — merge: preserve existing keys, overlay config keys
     if server.properties:
         props_path = output_dir / "server.properties"
-        lines = [f"{k}={v}\n" for k, v in server.properties.items()]
-        content = "".join(lines)
         if dry_run:
-            print(f"[dry-run] Would write {props_path}:")
-            for line in lines:
-                print(f"  {line}", end="")
+            print(f"[dry-run] Would write/merge {props_path}:")
+            for k, v in server.properties.items():
+                print(f"  {k}={v}")
         else:
-            props_path.write_text(content)
+            existing: dict[str, str] = {}
+            if props_path.exists():
+                for line in props_path.read_text().splitlines():
+                    if "=" in line and not line.startswith("#"):
+                        k, _, v = line.partition("=")
+                        existing[k.strip()] = v.strip()
+            existing.update(server.properties)
+            props_path.write_text(
+                "\n".join(f"{k}={v}" for k, v in existing.items()) + "\n"
+            )
 
     # launch.sh
     launch_path = output_dir / "launch.sh"
@@ -272,7 +279,43 @@ def _setup_modpack(config, output_dir: Path, dry_run: bool) -> None:
             overrides_exclusions=mp.overrides_exclusions or None,
         )
 
-    _write_server_files(config, output_dir, None, dry_run)
+    # Install server JAR using loader info the modpack installer saved to manifest
+    from mc_helper.http_client import build_session
+    from mc_helper.manifest import Manifest
+
+    manifest = Manifest(output_dir)
+    manifest.load()
+
+    session = build_session()
+    jar_path: Path | None = None
+    loader_type = manifest.loader_type
+    mc_version = manifest.mc_version
+    loader_version = manifest.loader_version
+
+    if loader_type == "fabric":
+        from mc_helper.server import fabric
+        jar_path = fabric.install(mc_version, output_dir, loader_version=loader_version, session=session)
+    elif loader_type == "forge":
+        from mc_helper.server import forge
+        forge.install(mc_version, output_dir, forge_version=loader_version, session=session)
+    elif loader_type == "neoforge":
+        from mc_helper.server import neoforge
+        neoforge.install(mc_version, output_dir, neoforge_version=loader_version, session=session)
+    elif loader_type == "quilt":
+        raise NotImplementedError("Quilt server installation is not supported")
+    elif loader_type in (None, "vanilla"):
+        from mc_helper.server import vanilla
+        jar_path = vanilla.install(mc_version, output_dir, session=session)
+    elif loader_type == "paper":
+        from mc_helper.server import paper
+        jar_path = paper.install(mc_version, output_dir, session=session)
+    elif loader_type == "purpur":
+        from mc_helper.server import purpur
+        jar_path = purpur.install(mc_version, output_dir, session=session)
+    else:
+        raise ValueError(f"Unknown loader type from modpack manifest: {loader_type!r}")
+
+    _write_server_files(config, output_dir, jar_path, dry_run)
     print(f"Modpack installed to {output_dir}")
 
 

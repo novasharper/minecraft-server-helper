@@ -51,7 +51,12 @@ def _search_modpack(session: requests.Session, slug: str) -> dict:
     return data[0]
 
 
-def _get_modpack_file(session: requests.Session, mod_id: int, file_id: int | None) -> dict:
+def _get_modpack_file(
+    session: requests.Session,
+    mod_id: int,
+    file_id: int | None,
+    filename_matcher: str | None = None,
+) -> dict:
     """Return the file object. If file_id is None, returns the latest file."""
     if file_id is not None:
         resp = _get_json(session, f"{_API_BASE}/v1/mods/{mod_id}/files/{file_id}")
@@ -62,6 +67,12 @@ def _get_modpack_file(session: requests.Session, mod_id: int, file_id: int | Non
     if not files:
         raise ValueError(f"No files found for CurseForge mod {mod_id}")
     # Files are returned newest-first
+    if filename_matcher is not None:
+        files = [f for f in files if filename_matcher in f["fileName"]]
+        if not files:
+            raise ValueError(
+                f"No files matching {filename_matcher!r} found for CurseForge mod {mod_id}"
+            )
     return files[0]
 
 
@@ -152,7 +163,7 @@ def install(
         mod_obj = _search_modpack(session, slug)
         mod_id = mod_obj["id"]
 
-    pack_file = _get_modpack_file(session, mod_id, file_id)
+    pack_file = _get_modpack_file(session, mod_id, file_id, filename_matcher)
     pack_url = _download_url_for_file(pack_file)
 
     # 2. Download ZIP
