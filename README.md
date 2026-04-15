@@ -12,6 +12,11 @@ A standalone Python CLI (`mc-helper`) that prepares a Minecraft server directory
 - **Config-driven**: One YAML file covers server type, properties, mods, and output location
 - **Dry-run mode**: Preview all actions without downloading or writing anything
 
+## TODO
+
+- Add end-to-end tests (validate config variants actually setting up minecraft server)
+- Think of extra QoL features that could be used to manage a minecraft server (like backups)
+
 ## Installation
 
 Requires Python 3.11+ and [Poetry](https://python-poetry.org/).
