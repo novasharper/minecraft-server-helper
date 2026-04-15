@@ -55,12 +55,12 @@
 - [x] Write `tests/test_mods_modrinth.py` — 10 tests
 - [x] Write `tests/test_mods_curseforge.py` — 15 tests
 
-## Phase 7: CLI & Output
-- [ ] Implement `mc-helper setup` — dispatch to correct installer, write `server.properties`, `eula.txt`, `launch.sh`
+## Phase 7: CLI & Output ✓
+- [x] Implement `mc-helper setup` — dispatch to correct installer, write `server.properties`, `eula.txt`, `launch.sh`
   - `server.properties` key mapping from `docker-minecraft-server/files/property-definitions.json`
-- [ ] Implement `mc-helper status` — read manifest, display installed versions
-- [ ] Add `--dry-run` flag to `setup` (log actions without downloading)
-- [ ] Add `--output-dir` flag to override `server.output_dir` from config
+- [x] Implement `mc-helper status` — read manifest, display installed versions
+- [x] Add `--dry-run` flag to `setup` (log actions without downloading)
+- [x] Add `--output-dir` flag to override `server.output_dir` from config
 
 ## Phase 8: Polish
 - [ ] Update `CLAUDE.md` at repo root with mc-helper build/test/lint commands

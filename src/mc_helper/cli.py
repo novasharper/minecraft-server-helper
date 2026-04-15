@@ -61,20 +61,157 @@ def _cmd_setup(args: argparse.Namespace) -> None:
         sys.exit(1)
 
     output_dir = Path(args.output_dir) if args.output_dir else config.server.output_dir
+    dry_run: bool = args.dry_run
+
+    if dry_run:
+        print("[dry-run] No files will be downloaded or written.")
 
     if config.server_pack:
-        _setup_server_pack(config, output_dir)
+        _setup_server_pack(config, output_dir, dry_run)
     elif config.modpack:
-        print("modpack setup: not yet implemented", file=sys.stderr)
-        sys.exit(1)
+        _setup_modpack(config, output_dir, dry_run)
     elif config.mods:
-        _setup_mods(config, output_dir)
+        _setup_mods(config, output_dir, dry_run)
     else:
-        print("vanilla/loader-only setup: not yet implemented", file=sys.stderr)
-        sys.exit(1)
+        # Vanilla / loader-only: install server JAR, then write config files
+        jar_path = _install_server_jar(config, output_dir, dry_run)
+        _write_server_files(config, output_dir, jar_path, dry_run)
+        if not dry_run:
+            print(f"Server installed to {output_dir}")
 
 
-def _setup_server_pack(config, output_dir: Path) -> None:
+def _install_server_jar(config, output_dir: Path, dry_run: bool) -> Path | None:
+    """Install the appropriate server JAR.
+
+    Returns the path to the installed JAR, or None for Forge/NeoForge (which
+    create their own run script via --installServer).
+    """
+    from mc_helper.http_client import build_session
+
+    server = config.server
+
+    if dry_run:
+        print(
+            f"[dry-run] Would install {server.type} {server.minecraft_version} "
+            f"server to {output_dir}"
+        )
+        return None
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    session = build_session()
+
+    if server.type == "vanilla":
+        from mc_helper.server import vanilla
+
+        return vanilla.install(server.minecraft_version, output_dir, session=session)
+
+    elif server.type == "fabric":
+        from mc_helper.server import fabric
+
+        return fabric.install(
+            server.minecraft_version,
+            output_dir,
+            loader_version=server.loader_version,
+            session=session,
+        )
+
+    elif server.type == "forge":
+        from mc_helper.server import forge
+
+        forge.install(
+            server.minecraft_version,
+            output_dir,
+            forge_version=server.loader_version,
+            session=session,
+        )
+        return None  # forge --installServer creates its own run.sh
+
+    elif server.type == "neoforge":
+        from mc_helper.server import neoforge
+
+        neoforge.install(
+            server.minecraft_version,
+            output_dir,
+            neoforge_version=server.loader_version,
+            session=session,
+        )
+        return None  # neoforge --installServer creates its own run.sh
+
+    elif server.type == "paper":
+        from mc_helper.server import paper
+
+        return paper.install(server.minecraft_version, output_dir, session=session)
+
+    elif server.type == "purpur":
+        from mc_helper.server import purpur
+
+        return purpur.install(server.minecraft_version, output_dir, session=session)
+
+    else:
+        raise ValueError(f"Unknown or unsupported server type: {server.type!r}")
+
+
+def _write_server_files(config, output_dir: Path, jar_path: Path | None, dry_run: bool) -> None:
+    """Write eula.txt, server.properties, and launch.sh into output_dir."""
+    server = config.server
+
+    # eula.txt
+    eula_value = str(server.eula).lower()
+    eula_path = output_dir / "eula.txt"
+    if dry_run:
+        print(f"[dry-run] Would write {eula_path}: eula={eula_value}")
+    else:
+        output_dir.mkdir(parents=True, exist_ok=True)
+        eula_path.write_text(f"eula={eula_value}\n")
+
+    # server.properties
+    if server.properties:
+        props_path = output_dir / "server.properties"
+        lines = [f"{k}={v}\n" for k, v in server.properties.items()]
+        content = "".join(lines)
+        if dry_run:
+            print(f"[dry-run] Would write {props_path}:")
+            for line in lines:
+                print(f"  {line}", end="")
+        else:
+            props_path.write_text(content)
+
+    # launch.sh
+    launch_path = output_dir / "launch.sh"
+    mem = server.memory
+    if jar_path is not None:
+        jar_name = jar_path.name
+        launch_content = (
+            f"#!/bin/sh\n"
+            f"exec java -Xmx{mem} -Xms{mem} -jar {jar_name} nogui \"$@\"\n"
+        )
+    elif server.type in ("forge", "neoforge"):
+        launch_content = (
+            f"#!/bin/sh\n"
+            f"# The Forge/NeoForge installer created run.sh — invoke it here.\n"
+            f"exec ./run.sh \"$@\"\n"
+        )
+    else:
+        launch_content = (
+            f"#!/bin/sh\n"
+            f"exec java -Xmx{mem} -Xms{mem} -jar server.jar nogui \"$@\"\n"
+        )
+
+    if dry_run:
+        print(f"[dry-run] Would write {launch_path}:")
+        for line in launch_content.splitlines():
+            print(f"  {line}")
+    else:
+        launch_path.write_text(launch_content)
+        launch_path.chmod(0o755)
+
+
+def _setup_server_pack(config, output_dir: Path, dry_run: bool) -> None:
+    if dry_run:
+        print(f"[dry-run] Would install server pack to {output_dir}")
+        _write_server_files(config, output_dir, None, dry_run)
+        return
+
     from mc_helper.pack.server_pack import install as install_pack
 
     sp = config.server_pack
@@ -89,10 +226,70 @@ def _setup_server_pack(config, output_dir: Path) -> None:
         disable_mods_patterns=sp.disable_mods,
         force_update=sp.force_update,
     )
+    _write_server_files(config, output_dir, None, dry_run)
     print(f"Server pack installed to {output_dir}")
 
 
-def _setup_mods(config, output_dir: Path) -> None:
+def _setup_modpack(config, output_dir: Path, dry_run: bool) -> None:
+    mp = config.modpack
+
+    if dry_run:
+        print(f"[dry-run] Would install {mp.platform} modpack to {output_dir}")
+        _write_server_files(config, output_dir, None, dry_run)
+        return
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    loader = (
+        config.server.type
+        if config.server.type not in ("vanilla", "paper", "purpur")
+        else None
+    )
+
+    if mp.platform == "modrinth":
+        from mc_helper.modpack import modrinth
+
+        modrinth.install(
+            project=mp.project,
+            output_dir=output_dir,
+            minecraft_version=config.server.minecraft_version,
+            loader=loader,
+            version_type=mp.version_type,
+            requested_version=mp.version,
+            exclude_mods=mp.exclude_mods or None,
+            overrides_exclusions=mp.overrides_exclusions or None,
+        )
+    elif mp.platform == "curseforge":
+        from mc_helper.modpack import curseforge
+
+        curseforge.install(
+            api_key=mp.api_key,
+            output_dir=output_dir,
+            slug=mp.slug,
+            file_id=mp.file_id,
+            filename_matcher=mp.filename_matcher,
+            exclude_mods=mp.exclude_mods or None,
+            force_include_mods=mp.force_include_mods or None,
+            overrides_exclusions=mp.overrides_exclusions or None,
+        )
+
+    _write_server_files(config, output_dir, None, dry_run)
+    print(f"Modpack installed to {output_dir}")
+
+
+def _setup_mods(config, output_dir: Path, dry_run: bool) -> None:
+    if dry_run:
+        mods_cfg = config.mods
+        mr_count = len(mods_cfg.modrinth or [])
+        cf_count = len(mods_cfg.curseforge.files) if mods_cfg.curseforge else 0
+        url_count = len(mods_cfg.urls or [])
+        print(
+            f"[dry-run] Would install {mr_count} Modrinth + {cf_count} CurseForge "
+            f"+ {url_count} URL mod(s) to {output_dir}/mods/"
+        )
+        jar_path = _install_server_jar(config, output_dir, dry_run)
+        _write_server_files(config, output_dir, jar_path, dry_run)
+        return
+
     from mc_helper.mods import curseforge as cf_mods
     from mc_helper.mods import modrinth as mr_mods
     from mc_helper.http_client import build_session
@@ -160,7 +357,39 @@ def _setup_mods(config, output_dir: Path) -> None:
 
     print(f"\n{len(installed)} mod(s) installed to {output_dir}/mods/")
 
+    # Install server JAR and write config files
+    jar_path = _install_server_jar(config, output_dir, dry_run)
+    _write_server_files(config, output_dir, jar_path, dry_run)
+
 
 def _cmd_status(args: argparse.Namespace) -> None:
-    print(f"status: {args.config} (not yet implemented)")
-    sys.exit(1)
+    try:
+        config = load_config(args.config)
+    except Exception as exc:
+        print(f"Invalid config: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+    from mc_helper.manifest import Manifest
+
+    output_dir = config.server.output_dir
+    manifest = Manifest(output_dir)
+    manifest.load()
+
+    if not manifest._data:
+        print(f"No manifest found in {output_dir} — server has not been set up yet.")
+        return
+
+    print(f"Manifest: {manifest.path}")
+    if manifest.mc_version:
+        print(f"  Minecraft version : {manifest.mc_version}")
+    if manifest.loader_type:
+        print(f"  Loader            : {manifest.loader_type}")
+    if manifest.loader_version:
+        print(f"  Loader version    : {manifest.loader_version}")
+    if manifest.pack_sha1:
+        print(f"  Pack SHA-1        : {manifest.pack_sha1}")
+    files = manifest.files
+    if files:
+        print(f"  Tracked files     : {len(files)}")
+        for f in files:
+            print(f"    {f}")
