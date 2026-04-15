@@ -4,12 +4,13 @@ A standalone Python CLI (`mc-helper`) that prepares a Minecraft server directory
 
 ## Features
 
-- **Server types**: Vanilla, Fabric, Forge, NeoForge, Paper, Purpur
-- **Modpacks**: CurseForge and Modrinth modpack installation
-- **Individual mods**: Modrinth and CurseForge mod resolution by slug, ID, or version
-- **Server packs**: Pre-assembled ZIP/tar.gz from direct URL or GitHub release assets
+- **Seven server types**: Vanilla, Fabric, Forge, NeoForge, Paper, Purpur
+- **Modpacks**: CurseForge and Modrinth modpack installation with override extraction
+- **Individual mods**: Modrinth and CurseForge mod resolution by slug, ID, or version; parallel downloads
+- **Server packs**: Pre-assembled ZIP/tar.gz from direct URL or GitHub release asset
 - **Idempotent**: Manifest-tracked state skips unchanged files and removes stale ones on re-run
 - **Config-driven**: One YAML file covers server type, properties, mods, and output location
+- **Dry-run mode**: Preview all actions without downloading or writing anything
 
 ## Installation
 
@@ -19,35 +20,49 @@ Requires Python 3.11+ and [Poetry](https://python-poetry.org/).
 poetry install
 ```
 
-## Usage
+## Quick start
 
 ```bash
-# Validate a config file
-mc-helper validate --config example-config.yaml
+# 1. Write a config file (see Configuration below)
+# 2. Validate it
+mc-helper validate --config config.yaml
 
-# Set up a server
-mc-helper setup --config example-config.yaml
+# 3. Set up the server
+mc-helper setup --config config.yaml
 
-# Check installed state
-mc-helper status --config example-config.yaml
+# 4. Check installed state
+mc-helper status --config config.yaml
 ```
+
+After a successful `setup` run, `output_dir` contains the server JAR (or extracted server pack), `eula.txt`, `server.properties`, and an executable `launch.sh`.
+
+## Commands
+
+| Command | Description |
+|---|---|
+| `setup --config FILE` | Download and install everything. |
+| `setup --config FILE --dry-run` | Print what would be done without downloading anything. |
+| `setup --config FILE --output-dir DIR` | Override `server.output_dir` from the config. |
+| `validate --config FILE` | Validate the config file and exit. |
+| `status --config FILE` | Show the installed state from the manifest. |
 
 ## Configuration
 
-A minimal `config.yaml`:
+A config file has one required `server` section and exactly one install mode: `modpack`, `mods`, or `server_pack`. Omitting all three installs only the server JAR.
+
+### Minimal example — Modrinth modpack
 
 ```yaml
 server:
   type: fabric
   minecraft_version: "1.21.1"
-  loader_version: LATEST
   output_dir: ./server
   eula: true
   memory: 2G
   properties:
     difficulty: normal
-    max_players: 20
-    motd: "A Minecraft Server"
+    max-players: 20
+    motd: "My Server"
 
 modpack:
   platform: modrinth
@@ -55,18 +70,64 @@ modpack:
   version: LATEST
 ```
 
-See `example-config.yaml` for the full schema covering all three modes (`modpack`, `mods`, `server_pack`) and `PLAN.md` for complete design documentation.
+### Minimal example — individual mods
 
-Environment variables are interpolated using `${VAR}` syntax before validation (useful for API keys like `${CF_API_KEY}`).
+```yaml
+server:
+  type: fabric
+  minecraft_version: "1.21.1"
+  output_dir: ./server
+  eula: true
+
+mods:
+  modrinth:
+    - fabric-api
+    - "sodium:mc1.21-0.6.0"
+  curseforge:
+    api_key: ${CF_API_KEY}
+    files:
+      - jei
+```
+
+### Minimal example — server pack
+
+```yaml
+server:
+  type: fabric
+  minecraft_version: "1.21.1"
+  output_dir: ./server
+  eula: true
+
+server_pack:
+  github: "ATM-Team/ATM-10"
+  tag: LATEST
+  asset: "*server*"
+```
+
+See [`example-config.yaml`](example-config.yaml) for the full annotated schema covering every field and option. Full reference documentation is in [`docs/`](docs/):
+
+- [`docs/configuration.md`](docs/configuration.md) — complete field reference for all sections
+- [`docs/cli.md`](docs/cli.md) — command reference and generated file descriptions
+- [`docs/server-types.md`](docs/server-types.md) — per-type version resolution and installation details
+- [`docs/how-it-works.md`](docs/how-it-works.md) — manifest tracking, HTTP behaviour, archive extraction
+
+### Environment variable interpolation
+
+Any `${VAR}` in the config is replaced with the environment variable value before parsing. Useful for API keys:
+
+```yaml
+modpack:
+  api_key: ${CF_API_KEY}
+```
 
 ## Development
 
 ```bash
 poetry install
 
-poetry run pytest                                                 # all tests
-poetry run pytest tests/test_vanilla.py                           # one file
-poetry run pytest tests/test_curseforge.py::test_resolve_by_slug  # one test
+poetry run pytest                                                   # all tests
+poetry run pytest tests/test_vanilla.py                             # one file
+poetry run pytest tests/test_curseforge.py::test_resolve_by_slug    # one test
 
 poetry run ruff check src/ tests/
 poetry run ruff format src/ tests/
