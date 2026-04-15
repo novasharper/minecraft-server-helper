@@ -41,7 +41,7 @@ def load_config(path: str | Path) -> "RootConfig":
 
 # ── Server ────────────────────────────────────────────────────────────────────
 
-ServerType = Literal["vanilla", "forge", "neoforge", "fabric", "quilt", "paper", "purpur"]
+ServerType = Literal["vanilla", "forge", "neoforge", "fabric", "paper", "purpur"]
 
 
 class ServerConfig(BaseModel):

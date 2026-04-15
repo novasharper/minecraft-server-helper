@@ -217,7 +217,7 @@ class TestInstallServerJar:
         fake_jar = tmp_path / "paper-1.21.4-200.jar"
         with (
             patch(
-                "mc_helper.server.vanilla.resolve_version", return_value="1.21.4"
+                "mc_helper.cli.resolve_version", return_value="1.21.4"
             ) as mock_resolve,
             patch("mc_helper.server.paper.install", return_value=fake_jar) as mock_paper,
         ):

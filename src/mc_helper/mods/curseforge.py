@@ -56,13 +56,26 @@ def _resolve_project_id(session: requests.Session, slug: str) -> int:
     return data[0]["id"]
 
 
+_LOADER_TYPE_MAP = {"forge": 1, "fabric": 4, "quilt": 5, "neoforge": 6}
+
+
 def _get_latest_file(
-    session: requests.Session, project_id: int, minecraft_version: str | None
+    session: requests.Session,
+    project_id: int,
+    minecraft_version: str | None,
+    loader: str | None = None,
 ) -> dict:
     """Return the newest compatible file object for *project_id*."""
-    url = f"{_API_BASE}/v1/mods/{project_id}/files"
+    params: list[str] = []
     if minecraft_version:
-        url += f"?gameVersion={minecraft_version}"
+        params.append(f"gameVersion={minecraft_version}")
+    if loader:
+        loader_type = _LOADER_TYPE_MAP.get(loader.lower())
+        if loader_type is not None:
+            params.append(f"modLoaderType={loader_type}")
+    url = f"{_API_BASE}/v1/mods/{project_id}/files"
+    if params:
+        url += "?" + "&".join(params)
     resp = _get_json(session, url)
     files = resp["data"]  # type: ignore[index]
     if not files:
@@ -75,6 +88,7 @@ def install_mod(
     output_dir: Path,
     api_key: str,
     minecraft_version: str | None = None,
+    loader: str | None = None,
     session: requests.Session | None = None,
     show_progress: bool = True,
 ) -> str:
@@ -97,10 +111,12 @@ def install_mod(
         resp = _get_json(session, f"{_API_BASE}/v1/mods/{project_id}/files/{file_id}")
         file_obj = resp["data"]  # type: ignore[index]
     else:
-        file_obj = _get_latest_file(session, project_id, minecraft_version)
+        file_obj = _get_latest_file(session, project_id, minecraft_version, loader)
 
     url = _download_url_for_file(file_obj)
     filename = file_obj["fileName"]
     dest = output_dir / "mods" / filename
-    download_file(url, dest, session=session, show_progress=show_progress)
+    hashes = file_obj.get("hashes", [])
+    sha1 = next((h["value"] for h in hashes if h.get("algo") == 1), None)
+    download_file(url, dest, session=session, expected_sha1=sha1, show_progress=show_progress)
     return str(Path("mods") / filename)

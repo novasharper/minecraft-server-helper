@@ -272,3 +272,112 @@ def test_install_mod_with_mc_version_filter(tmp_path):
     )
 
     assert (tmp_path / "mods" / "jei-1.21.1-18.0.jar").exists()
+
+
+@rsps_lib.activate
+def test_install_mod_with_loader_filter(tmp_path):
+    """Passing loader='fabric' should append modLoaderType=4 to the files query."""
+    jar_bytes = b"fabric-jar"
+    rsps_lib.add(
+        rsps_lib.GET,
+        f"{_API}/v1/mods/238222/files?gameVersion=1.21.1&modLoaderType=4",
+        json=_files_list_response(),
+    )
+    rsps_lib.add(
+        rsps_lib.GET,
+        "https://edge.forgecdn.net/files/4593/548/jei-1.21.1-18.0.jar",
+        body=jar_bytes,
+    )
+
+    session = build_session()
+    install_mod(
+        "238222", tmp_path,
+        api_key=_FAKE_KEY,
+        minecraft_version="1.21.1",
+        loader="fabric",
+        session=session,
+        show_progress=False,
+    )
+
+    assert (tmp_path / "mods" / "jei-1.21.1-18.0.jar").exists()
+
+
+@rsps_lib.activate
+def test_install_mod_loader_filter_neoforge(tmp_path):
+    """loader='neoforge' should use modLoaderType=6."""
+    jar_bytes = b"neoforge-jar"
+    rsps_lib.add(
+        rsps_lib.GET,
+        f"{_API}/v1/mods/238222/files?modLoaderType=6",
+        json=_files_list_response(),
+    )
+    rsps_lib.add(
+        rsps_lib.GET,
+        "https://edge.forgecdn.net/files/4593/548/jei-1.21.1-18.0.jar",
+        body=jar_bytes,
+    )
+
+    session = build_session()
+    install_mod(
+        "238222", tmp_path,
+        api_key=_FAKE_KEY,
+        loader="neoforge",
+        session=session,
+        show_progress=False,
+    )
+
+    assert (tmp_path / "mods" / "jei-1.21.1-18.0.jar").exists()
+
+
+@rsps_lib.activate
+def test_install_mod_verifies_sha1(tmp_path):
+    """Files with hashes in the API response should be SHA-1 verified on download."""
+    import hashlib
+    jar_bytes = b"verified-jar-content"
+    correct_sha1 = hashlib.sha1(jar_bytes).hexdigest()
+
+    rsps_lib.add(
+        rsps_lib.GET,
+        f"{_API}/v1/mods/238222/files",
+        json={"data": [{
+            "id": 4593548,
+            "fileName": "jei-1.21.1-18.0.jar",
+            "downloadUrl": "https://edge.forgecdn.net/files/4593/548/jei-1.21.1-18.0.jar",
+            "hashes": [{"algo": 1, "value": correct_sha1}],
+        }]},
+    )
+    rsps_lib.add(
+        rsps_lib.GET,
+        "https://edge.forgecdn.net/files/4593/548/jei-1.21.1-18.0.jar",
+        body=jar_bytes,
+    )
+
+    session = build_session()
+    install_mod("238222", tmp_path, api_key=_FAKE_KEY, session=session, show_progress=False)
+    assert (tmp_path / "mods" / "jei-1.21.1-18.0.jar").read_bytes() == jar_bytes
+
+
+@rsps_lib.activate
+def test_install_mod_sha1_mismatch_raises(tmp_path):
+    """A SHA-1 mismatch on download should raise ValueError and delete the file."""
+    rsps_lib.add(
+        rsps_lib.GET,
+        f"{_API}/v1/mods/238222/files",
+        json={"data": [{
+            "id": 4593548,
+            "fileName": "jei-1.21.1-18.0.jar",
+            "downloadUrl": "https://edge.forgecdn.net/files/4593/548/jei-1.21.1-18.0.jar",
+            "hashes": [{"algo": 1, "value": "deadbeef" * 5}],  # wrong hash
+        }]},
+    )
+    rsps_lib.add(
+        rsps_lib.GET,
+        "https://edge.forgecdn.net/files/4593/548/jei-1.21.1-18.0.jar",
+        body=b"actual-jar-content",
+    )
+
+    session = build_session()
+    with pytest.raises(ValueError, match="SHA-1 mismatch"):
+        install_mod("238222", tmp_path, api_key=_FAKE_KEY, session=session, show_progress=False)
+
+    assert not (tmp_path / "mods" / "jei-1.21.1-18.0.jar").exists()

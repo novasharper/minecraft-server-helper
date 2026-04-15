@@ -4,6 +4,15 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 from mc_helper.config import load_config
+from mc_helper.http_client import build_session, download_file
+from mc_helper.manifest import Manifest
+from mc_helper.modpack import curseforge as modpack_cf
+from mc_helper.modpack import modrinth as modpack_mr
+from mc_helper.mods import curseforge as cf_mods
+from mc_helper.mods import modrinth as mr_mods
+from mc_helper.pack.server_pack import install as install_pack
+from mc_helper.server import fabric, forge, neoforge, paper, purpur, vanilla
+from mc_helper.server.vanilla import resolve_version
 
 
 def main() -> None:
@@ -84,7 +93,6 @@ def _resolve_mc_version(session, version: str) -> str:
     """Resolve 'LATEST' / 'SNAPSHOT' to a concrete Minecraft release version."""
     if version.upper() not in ("LATEST", "SNAPSHOT"):
         return version
-    from mc_helper.server.vanilla import resolve_version
     return resolve_version(session, version)
 
 
@@ -94,8 +102,6 @@ def _install_server_jar(config, output_dir: Path, dry_run: bool) -> Path | None:
     Returns the path to the installed JAR, or None for Forge/NeoForge (which
     create their own run script via --installServer).
     """
-    from mc_helper.http_client import build_session
-
     server = config.server
 
     if dry_run:
@@ -110,13 +116,9 @@ def _install_server_jar(config, output_dir: Path, dry_run: bool) -> Path | None:
     mc_version = _resolve_mc_version(session, server.minecraft_version)
 
     if server.type == "vanilla":
-        from mc_helper.server import vanilla
-
         return vanilla.install(mc_version, output_dir, session=session)
 
     elif server.type == "fabric":
-        from mc_helper.server import fabric
-
         return fabric.install(
             mc_version,
             output_dir,
@@ -125,8 +127,6 @@ def _install_server_jar(config, output_dir: Path, dry_run: bool) -> Path | None:
         )
 
     elif server.type == "forge":
-        from mc_helper.server import forge
-
         forge.install(
             mc_version,
             output_dir,
@@ -136,8 +136,6 @@ def _install_server_jar(config, output_dir: Path, dry_run: bool) -> Path | None:
         return None  # forge --installServer creates its own run.sh
 
     elif server.type == "neoforge":
-        from mc_helper.server import neoforge
-
         neoforge.install(
             mc_version,
             output_dir,
@@ -147,13 +145,9 @@ def _install_server_jar(config, output_dir: Path, dry_run: bool) -> Path | None:
         return None  # neoforge --installServer creates its own run.sh
 
     elif server.type == "paper":
-        from mc_helper.server import paper
-
         return paper.install(mc_version, output_dir, session=session)
 
     elif server.type == "purpur":
-        from mc_helper.server import purpur
-
         return purpur.install(mc_version, output_dir, session=session)
 
     else:
@@ -242,8 +236,6 @@ def _setup_server_pack(config, output_dir: Path, dry_run: bool) -> None:
         _write_server_files(config, output_dir, None, dry_run)
         return
 
-    from mc_helper.pack.server_pack import install as install_pack
-
     sp = config.server_pack
     install_pack(
         output_dir=output_dir,
@@ -275,15 +267,11 @@ def _setup_modpack(config, output_dir: Path, dry_run: bool) -> None:
         else None
     )
 
-    from mc_helper.http_client import build_session
-
     session = build_session()
     mc_version = _resolve_mc_version(session, config.server.minecraft_version)
 
     if mp.platform == "modrinth":
-        from mc_helper.modpack import modrinth
-
-        modrinth.install(
+        modpack_mr.install(
             project=mp.project,
             output_dir=output_dir,
             minecraft_version=mc_version,
@@ -295,9 +283,7 @@ def _setup_modpack(config, output_dir: Path, dry_run: bool) -> None:
             session=session,
         )
     elif mp.platform == "curseforge":
-        from mc_helper.modpack import curseforge
-
-        curseforge.install(
+        modpack_cf.install(
             api_key=mp.api_key,
             output_dir=output_dir,
             slug=mp.slug,
@@ -309,8 +295,6 @@ def _setup_modpack(config, output_dir: Path, dry_run: bool) -> None:
         )
 
     # Install server JAR using loader info the modpack installer saved to manifest
-    from mc_helper.manifest import Manifest
-
     manifest = Manifest(output_dir)
     manifest.load()
     jar_path: Path | None = None
@@ -319,26 +303,20 @@ def _setup_modpack(config, output_dir: Path, dry_run: bool) -> None:
     loader_version = manifest.loader_version
 
     if loader_type == "fabric":
-        from mc_helper.server import fabric
         jar_path = fabric.install(
             mc_version, output_dir, loader_version=loader_version, session=session
         )
     elif loader_type == "forge":
-        from mc_helper.server import forge
         forge.install(mc_version, output_dir, forge_version=loader_version, session=session)
     elif loader_type == "neoforge":
-        from mc_helper.server import neoforge
         neoforge.install(mc_version, output_dir, neoforge_version=loader_version, session=session)
     elif loader_type == "quilt":
         raise NotImplementedError("Quilt server installation is not supported")
     elif loader_type in (None, "vanilla"):
-        from mc_helper.server import vanilla
         jar_path = vanilla.install(mc_version, output_dir, session=session)
     elif loader_type == "paper":
-        from mc_helper.server import paper
         jar_path = paper.install(mc_version, output_dir, session=session)
     elif loader_type == "purpur":
-        from mc_helper.server import purpur
         jar_path = purpur.install(mc_version, output_dir, session=session)
     else:
         raise ValueError(f"Unknown loader type from modpack manifest: {loader_type!r}")
@@ -360,10 +338,6 @@ def _setup_mods(config, output_dir: Path, dry_run: bool) -> None:
         jar_path = _install_server_jar(config, output_dir, dry_run)
         _write_server_files(config, output_dir, jar_path, dry_run)
         return
-
-    from mc_helper.http_client import build_session
-    from mc_helper.mods import curseforge as cf_mods
-    from mc_helper.mods import modrinth as mr_mods
 
     mods_cfg = config.mods
     loader = (
@@ -400,6 +374,7 @@ def _setup_mods(config, output_dir: Path, dry_run: bool) -> None:
                 spec, output_dir,
                 api_key=cf.api_key,
                 minecraft_version=mc_ver,
+                loader=loader,
                 session=cf_session,
                 show_progress=False,
             )
@@ -417,7 +392,6 @@ def _setup_mods(config, output_dir: Path, dry_run: bool) -> None:
                 print(f"  ERROR {spec}: {exc}", file=sys.stderr)
 
     for spec in (mods_cfg.urls or []):
-        from mc_helper.http_client import download_file
         filename = spec.split("/")[-1].split("?")[0]
         dest = output_dir / "mods" / filename
         download_file(spec, dest, session=session, show_progress=True)
@@ -441,8 +415,6 @@ def _cmd_status(args: argparse.Namespace) -> None:
     except Exception as exc:
         print(f"Invalid config: {exc}", file=sys.stderr)
         sys.exit(1)
-
-    from mc_helper.manifest import Manifest
 
     output_dir = config.server.output_dir
     manifest = Manifest(output_dir)

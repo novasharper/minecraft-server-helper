@@ -128,7 +128,8 @@ def test_cleanup_stale_deletes_removed_files(tmp_path):
     m.files = ["mods/old.jar", "mods/keep.jar"]
 
     deleted = m.cleanup_stale(tmp_path, new_files=["mods/keep.jar"])
-    assert old not in deleted or not old.exists()
+    assert old in deleted
+    assert not old.exists()
     assert keep.exists()
 
 

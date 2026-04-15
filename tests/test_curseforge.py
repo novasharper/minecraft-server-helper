@@ -223,3 +223,85 @@ def test_install_writes_manifest(tmp_path):
 def test_install_no_slug_no_mod_id_raises(tmp_path):
     with pytest.raises(ValueError, match="slug or mod_id"):
         install("fake-key", tmp_path, show_progress=False)
+
+
+# ── hash verification for mod downloads ──────────────────────────────────────
+
+
+@rsps_lib.activate
+def test_install_verifies_mod_hash(tmp_path):
+    """Mod files with hashes in the API response should be SHA-1 verified."""
+    mod_id = 555
+    pack_file_id = 2000
+    mod_file_id = 3001
+
+    dep_mod_file = {
+        "id": mod_file_id,
+        "fileName": "jei-1.0.jar",
+        "downloadUrl": "https://edge.forgecdn.net/files/3/1/jei-1.0.jar",
+        "gameVersions": ["1.21.1"],
+        "hashes": [{"algo": 1, "value": "aabbccdd" * 5}],  # wrong SHA-1
+    }
+
+    manifest_data = _minimal_manifest(
+        files=[{"projectID": 100, "fileID": mod_file_id, "required": True}]
+    )
+    pack_file = _make_mod_file(pack_file_id, "testpack-1.0.zip")
+    pack_file["downloadUrl"] = "https://edge.forgecdn.net/files/2/0/testpack-1.0.zip"
+    pack_zip = _make_modpack_zip(manifest_data)
+
+    rsps_lib.add(
+        rsps_lib.GET, f"{_API}/v1/mods/{mod_id}/files",
+        json={"data": [pack_file]},
+    )
+    rsps_lib.add(rsps_lib.GET, pack_file["downloadUrl"], body=pack_zip)
+    rsps_lib.add(
+        rsps_lib.GET, f"{_API}/v1/mods/100/files/{mod_file_id}",
+        json={"data": dep_mod_file},
+    )
+    rsps_lib.add(
+        rsps_lib.GET, dep_mod_file["downloadUrl"],
+        body=b"fake-jar-content",  # hash of this won't match "aabbccdd" * 5
+    )
+
+    session = build_session()
+    with pytest.raises(ValueError, match="SHA-1 mismatch"):
+        install("fake-key", tmp_path, mod_id=mod_id, session=session, show_progress=False)
+
+
+@rsps_lib.activate
+def test_install_skips_hash_when_none(tmp_path):
+    """Mod files without hashes in the API response should download without error."""
+    mod_id = 555
+    pack_file_id = 2000
+    mod_file_id = 3001
+
+    dep_mod_file = {
+        "id": mod_file_id,
+        "fileName": "jei-1.0.jar",
+        "downloadUrl": "https://edge.forgecdn.net/files/3/1/jei-1.0.jar",
+        "gameVersions": ["1.21.1"],
+        "hashes": [],  # no hashes provided
+    }
+
+    manifest_data = _minimal_manifest(
+        files=[{"projectID": 100, "fileID": mod_file_id, "required": True}]
+    )
+    pack_file = _make_mod_file(pack_file_id, "testpack-1.0.zip")
+    pack_file["downloadUrl"] = "https://edge.forgecdn.net/files/2/0/testpack-1.0.zip"
+    pack_zip = _make_modpack_zip(manifest_data)
+
+    rsps_lib.add(
+        rsps_lib.GET, f"{_API}/v1/mods/{mod_id}/files",
+        json={"data": [pack_file]},
+    )
+    rsps_lib.add(rsps_lib.GET, pack_file["downloadUrl"], body=pack_zip)
+    rsps_lib.add(
+        rsps_lib.GET, f"{_API}/v1/mods/100/files/{mod_file_id}",
+        json={"data": dep_mod_file},
+    )
+    rsps_lib.add(rsps_lib.GET, dep_mod_file["downloadUrl"], body=b"fake-jar-content")
+
+    session = build_session()
+    install("fake-key", tmp_path, mod_id=mod_id, session=session, show_progress=False)
+    assert (tmp_path / "mods" / "jei-1.0.jar").exists()

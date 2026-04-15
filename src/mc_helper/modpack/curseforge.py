@@ -192,7 +192,9 @@ def install(
                 url = _download_url_for_file(file_obj)
                 fname = file_obj["fileName"]
                 dest = output_dir / "mods" / fname
-                download_file(url, dest, session=session, show_progress=False)
+                hashes = file_obj.get("hashes", [])
+                sha1 = next((h["value"] for h in hashes if h.get("algo") == 1), None)
+                download_file(url, dest, session=session, expected_sha1=sha1, show_progress=False)
                 return str(Path("mods") / fname)
 
             with ThreadPoolExecutor(max_workers=_MAX_WORKERS) as pool:
