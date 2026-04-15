@@ -1,5 +1,39 @@
 import fnmatch
+import zipfile
 from pathlib import Path
+
+
+def extract_zip_overrides(
+    zf: zipfile.ZipFile,
+    output_dir: Path,
+    prefixes: list[str],
+    exclusions: list[str],
+) -> list[str]:
+    """Extract one or more override directories from *zf* into *output_dir*.
+
+    Each entry in *prefixes* is a directory name (e.g. ``"overrides"``).
+    Files whose relative path matches any *exclusions* glob are skipped.
+    Returns the list of extracted relative paths.
+    """
+    extracted: list[str] = []
+    for prefix_name in prefixes:
+        prefix = prefix_name.rstrip("/") + "/"
+        for name in zf.namelist():
+            if not name.startswith(prefix) or name == prefix:
+                continue
+            rel = name[len(prefix):]
+            if not rel:
+                continue
+            if any(fnmatch.fnmatch(rel, pat) for pat in exclusions):
+                continue
+            dest = output_dir / rel
+            if name.endswith("/"):
+                dest.mkdir(parents=True, exist_ok=True)
+            else:
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                dest.write_bytes(zf.read(name))
+                extracted.append(rel)
+    return extracted
 
 
 def compare_versions(a: str, b: str) -> int:

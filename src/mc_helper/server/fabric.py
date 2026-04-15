@@ -9,15 +9,9 @@ from pathlib import Path
 
 import requests
 
-from mc_helper.http_client import build_session, download_file
+from mc_helper.http_client import build_session, download_file, get_json
 
 _META_BASE = "https://meta.fabricmc.net"
-
-
-def _get_json(session: requests.Session, url: str) -> object:
-    resp = session.get(url, timeout=30)
-    resp.raise_for_status()
-    return resp.json()
 
 
 def resolve_loader_version(
@@ -26,7 +20,7 @@ def resolve_loader_version(
     """Return the concrete loader version to use."""
     if requested.upper() != "LATEST":
         return requested
-    versions = _get_json(
+    versions = get_json(
         session, f"{_META_BASE}/v2/versions/loader/{minecraft_version}"
     )
     if not versions:
@@ -40,7 +34,7 @@ def resolve_installer_version(session: requests.Session, requested: str) -> str:
     """Return the concrete installer version to use."""
     if requested.upper() != "LATEST":
         return requested
-    versions = _get_json(session, f"{_META_BASE}/v2/versions/installer")
+    versions = get_json(session, f"{_META_BASE}/v2/versions/installer")
     if not versions:
         raise ValueError("No Fabric installer versions found")
     return versions[0]["version"]

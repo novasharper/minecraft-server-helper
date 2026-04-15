@@ -13,15 +13,9 @@ from pathlib import Path
 
 import requests
 
-from mc_helper.http_client import build_session, download_file
+from mc_helper.http_client import build_session, download_file, get_json
 
 _API_BASE = "https://fill.papermc.io"
-
-
-def _get_json(session: requests.Session, url: str) -> dict:
-    resp = session.get(url, timeout=30)
-    resp.raise_for_status()
-    return resp.json()
 
 
 def resolve_version(session: requests.Session, minecraft_version: str) -> str:
@@ -32,7 +26,7 @@ def resolve_version(session: requests.Session, minecraft_version: str) -> str:
 def get_latest_build(session: requests.Session, project: str, version: str) -> dict:
     """Return the latest build response dict for *project* / *version*."""
     url = f"{_API_BASE}/v3/projects/{project}/versions/{version}/builds/latest"
-    return _get_json(session, url)
+    return get_json(session, url)
 
 
 def install(

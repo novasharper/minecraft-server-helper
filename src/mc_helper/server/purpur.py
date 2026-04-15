@@ -12,20 +12,14 @@ from pathlib import Path
 
 import requests
 
-from mc_helper.http_client import build_session, download_file
+from mc_helper.http_client import build_session, download_file, get_json
 
 _API_BASE = "https://api.purpurmc.org"
 
 
-def _get_json(session: requests.Session, url: str) -> dict:
-    resp = session.get(url, timeout=30)
-    resp.raise_for_status()
-    return resp.json()
-
-
 def resolve_build(session: requests.Session, minecraft_version: str) -> str:
     """Return the latest build number string for *minecraft_version*."""
-    data = _get_json(session, f"{_API_BASE}/v2/purpur/{minecraft_version}")
+    data = get_json(session, f"{_API_BASE}/v2/purpur/{minecraft_version}")
     latest = data.get("builds", {}).get("latest")
     if not latest:
         raise ValueError(f"No Purpur builds found for Minecraft {minecraft_version}")

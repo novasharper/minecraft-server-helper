@@ -25,17 +25,12 @@ from pathlib import Path
 
 import requests
 
-from mc_helper.http_client import build_session, download_file
+from mc_helper.http_client import build_session, download_file, get_json
 from mc_helper.manifest import Manifest
+from mc_helper.utils import extract_zip_overrides
 
 _API_BASE = "https://api.modrinth.com/v2"
 _MAX_WORKERS = 10
-
-
-def _get_json(session: requests.Session, url: str) -> object:
-    resp = session.get(url, timeout=30)
-    resp.raise_for_status()
-    return resp.json()
 
 
 def resolve_version(
@@ -49,7 +44,7 @@ def resolve_version(
     """Return the best matching version object for the project."""
     if requested_version and requested_version.upper() != "LATEST":
         # Specific version number or ID — try direct lookup first
-        versions = _get_json(session, f"{_API_BASE}/project/{project}/versions")
+        versions = get_json(session, f"{_API_BASE}/project/{project}/versions")
         for v in versions:
             if v["version_number"] == requested_version or v["id"] == requested_version:
                 return v
@@ -67,7 +62,7 @@ def resolve_version(
     if query:
         url += f"?{query}"
 
-    versions = _get_json(session, url)
+    versions = get_json(session, url)
     if not versions:
         raise ValueError(
             f"No Modrinth versions found for project '{project}' "
@@ -106,28 +101,6 @@ def _should_include(file_entry: dict, exclusions: list[str]) -> bool:
         if fnmatch.fnmatch(Path(path).name, pattern):
             return False
     return True
-
-
-def _extract_overrides(zf: zipfile.ZipFile, output_dir: Path, exclusions: list[str]) -> list[str]:
-    """Extract overrides/ and server-overrides/ into output_dir. Returns relative paths."""
-    extracted: list[str] = []
-    for prefix in ("overrides/", "server-overrides/"):
-        for name in zf.namelist():
-            if not name.startswith(prefix) or name == prefix:
-                continue
-            rel = name[len(prefix):]
-            if not rel:
-                continue
-            if any(fnmatch.fnmatch(rel, pat) for pat in exclusions):
-                continue
-            dest = output_dir / rel
-            if name.endswith("/"):
-                dest.mkdir(parents=True, exist_ok=True)
-            else:
-                dest.parent.mkdir(parents=True, exist_ok=True)
-                dest.write_bytes(zf.read(name))
-                extracted.append(rel)
-    return extracted
 
 
 def install(
@@ -197,7 +170,9 @@ def install(
                     new_files.append(fut.result())
 
             # 6. Extract overrides
-            override_files = _extract_overrides(zf, output_dir, overrides_exclusions)
+            override_files = extract_zip_overrides(
+                zf, output_dir, ["overrides", "server-overrides"], overrides_exclusions
+            )
             new_files.extend(override_files)
 
         # 8. Cleanup stale + save manifest

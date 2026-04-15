@@ -15,8 +15,8 @@ from pathlib import Path
 
 import requests
 
-from mc_helper.http_client import build_session, download_file
-from mc_helper.modpack.curseforge import _download_url_for_file, _get_json
+from mc_helper.http_client import build_session, download_file, get_json
+from mc_helper.modpack.curseforge import _download_url_for_file
 
 _API_BASE = "https://api.curseforge.com"
 _MINECRAFT_GAME_ID = "432"
@@ -45,7 +45,7 @@ def parse_mod_spec(spec: str) -> tuple[str | int, int | None]:
 
 def _resolve_project_id(session: requests.Session, slug: str) -> int:
     """Return the CurseForge project ID for the given mod slug."""
-    resp = _get_json(
+    resp = get_json(
         session,
         f"{_API_BASE}/v1/mods/search"
         f"?gameId={_MINECRAFT_GAME_ID}&slug={slug}&classId={_MOD_CLASS_ID}",
@@ -76,7 +76,7 @@ def _get_latest_file(
     url = f"{_API_BASE}/v1/mods/{project_id}/files"
     if params:
         url += "?" + "&".join(params)
-    resp = _get_json(session, url)
+    resp = get_json(session, url)
     files = resp["data"]  # type: ignore[index]
     if not files:
         raise ValueError(f"No files found for CurseForge mod {project_id}")
@@ -108,7 +108,7 @@ def install_mod(
     )
 
     if file_id is not None:
-        resp = _get_json(session, f"{_API_BASE}/v1/mods/{project_id}/files/{file_id}")
+        resp = get_json(session, f"{_API_BASE}/v1/mods/{project_id}/files/{file_id}")
         file_obj = resp["data"]  # type: ignore[index]
     else:
         file_obj = _get_latest_file(session, project_id, minecraft_version, loader)

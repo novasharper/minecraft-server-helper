@@ -16,6 +16,13 @@ _RETRY = Retry(
 )
 
 
+def get_json(session: requests.Session, url: str) -> object:
+    """GET *url* and return the parsed JSON body. Raises on non-2xx."""
+    resp = session.get(url, timeout=30)
+    resp.raise_for_status()
+    return resp.json()
+
+
 def build_session(extra_headers: dict[str, str] | None = None) -> requests.Session:
     """Return a requests.Session with retry logic and a standard User-Agent."""
     session = requests.Session()
