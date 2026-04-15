@@ -80,6 +80,14 @@ def _cmd_setup(args: argparse.Namespace) -> None:
             print(f"Server installed to {output_dir}")
 
 
+def _resolve_mc_version(session, version: str) -> str:
+    """Resolve 'LATEST' / 'SNAPSHOT' to a concrete Minecraft release version."""
+    if version.upper() not in ("LATEST", "SNAPSHOT"):
+        return version
+    from mc_helper.server.vanilla import resolve_version
+    return resolve_version(session, version)
+
+
 def _install_server_jar(config, output_dir: Path, dry_run: bool) -> Path | None:
     """Install the appropriate server JAR.
 
@@ -99,17 +107,18 @@ def _install_server_jar(config, output_dir: Path, dry_run: bool) -> Path | None:
 
     output_dir.mkdir(parents=True, exist_ok=True)
     session = build_session()
+    mc_version = _resolve_mc_version(session, server.minecraft_version)
 
     if server.type == "vanilla":
         from mc_helper.server import vanilla
 
-        return vanilla.install(server.minecraft_version, output_dir, session=session)
+        return vanilla.install(mc_version, output_dir, session=session)
 
     elif server.type == "fabric":
         from mc_helper.server import fabric
 
         return fabric.install(
-            server.minecraft_version,
+            mc_version,
             output_dir,
             loader_version=server.loader_version,
             session=session,
@@ -119,7 +128,7 @@ def _install_server_jar(config, output_dir: Path, dry_run: bool) -> Path | None:
         from mc_helper.server import forge
 
         forge.install(
-            server.minecraft_version,
+            mc_version,
             output_dir,
             forge_version=server.loader_version,
             session=session,
@@ -130,7 +139,7 @@ def _install_server_jar(config, output_dir: Path, dry_run: bool) -> Path | None:
         from mc_helper.server import neoforge
 
         neoforge.install(
-            server.minecraft_version,
+            mc_version,
             output_dir,
             neoforge_version=server.loader_version,
             session=session,
@@ -140,12 +149,12 @@ def _install_server_jar(config, output_dir: Path, dry_run: bool) -> Path | None:
     elif server.type == "paper":
         from mc_helper.server import paper
 
-        return paper.install(server.minecraft_version, output_dir, session=session)
+        return paper.install(mc_version, output_dir, session=session)
 
     elif server.type == "purpur":
         from mc_helper.server import purpur
 
-        return purpur.install(server.minecraft_version, output_dir, session=session)
+        return purpur.install(mc_version, output_dir, session=session)
 
     else:
         raise ValueError(f"Unknown or unsupported server type: {server.type!r}")
@@ -172,16 +181,30 @@ def _write_server_files(config, output_dir: Path, jar_path: Path | None, dry_run
             for k, v in server.properties.items():
                 print(f"  {k}={v}")
         else:
-            existing: dict[str, str] = {}
             if props_path.exists():
-                for line in props_path.read_text().splitlines():
-                    if "=" in line and not line.startswith("#"):
-                        k, _, v = line.partition("=")
-                        existing[k.strip()] = v.strip()
-            existing.update(server.properties)
-            props_path.write_text(
-                "\n".join(f"{k}={v}" for k, v in existing.items()) + "\n"
-            )
+                # Merge: update matching keys in-place, preserving comments and
+                # blank lines; append any config keys not already in the file.
+                lines: list[str] = []
+                seen_keys: set[str] = set()
+                for raw in props_path.read_text().splitlines():
+                    if "=" in raw and not raw.lstrip().startswith("#"):
+                        k, _, _ = raw.partition("=")
+                        k = k.strip()
+                        if k in server.properties:
+                            lines.append(f"{k}={server.properties[k]}")
+                            seen_keys.add(k)
+                        else:
+                            lines.append(raw)
+                    else:
+                        lines.append(raw)
+                for k, v in server.properties.items():
+                    if k not in seen_keys:
+                        lines.append(f"{k}={v}")
+                props_path.write_text("\n".join(lines) + "\n")
+            else:
+                props_path.write_text(
+                    "\n".join(f"{k}={v}" for k, v in server.properties.items()) + "\n"
+                )
 
     # launch.sh
     launch_path = output_dir / "launch.sh"
@@ -194,9 +217,9 @@ def _write_server_files(config, output_dir: Path, jar_path: Path | None, dry_run
         )
     elif server.type in ("forge", "neoforge"):
         launch_content = (
-            f"#!/bin/sh\n"
-            f"# The Forge/NeoForge installer created run.sh — invoke it here.\n"
-            f"exec ./run.sh \"$@\"\n"
+            "#!/bin/sh\n"
+            "# The Forge/NeoForge installer created run.sh — invoke it here.\n"
+            "exec ./run.sh \"$@\"\n"
         )
     else:
         launch_content = (
@@ -252,18 +275,24 @@ def _setup_modpack(config, output_dir: Path, dry_run: bool) -> None:
         else None
     )
 
+    from mc_helper.http_client import build_session
+
+    session = build_session()
+    mc_version = _resolve_mc_version(session, config.server.minecraft_version)
+
     if mp.platform == "modrinth":
         from mc_helper.modpack import modrinth
 
         modrinth.install(
             project=mp.project,
             output_dir=output_dir,
-            minecraft_version=config.server.minecraft_version,
+            minecraft_version=mc_version,
             loader=loader,
             version_type=mp.version_type,
             requested_version=mp.version,
             exclude_mods=mp.exclude_mods or None,
             overrides_exclusions=mp.overrides_exclusions or None,
+            session=session,
         )
     elif mp.platform == "curseforge":
         from mc_helper.modpack import curseforge
@@ -280,13 +309,10 @@ def _setup_modpack(config, output_dir: Path, dry_run: bool) -> None:
         )
 
     # Install server JAR using loader info the modpack installer saved to manifest
-    from mc_helper.http_client import build_session
     from mc_helper.manifest import Manifest
 
     manifest = Manifest(output_dir)
     manifest.load()
-
-    session = build_session()
     jar_path: Path | None = None
     loader_type = manifest.loader_type
     mc_version = manifest.mc_version
@@ -294,7 +320,9 @@ def _setup_modpack(config, output_dir: Path, dry_run: bool) -> None:
 
     if loader_type == "fabric":
         from mc_helper.server import fabric
-        jar_path = fabric.install(mc_version, output_dir, loader_version=loader_version, session=session)
+        jar_path = fabric.install(
+            mc_version, output_dir, loader_version=loader_version, session=session
+        )
     elif loader_type == "forge":
         from mc_helper.server import forge
         forge.install(mc_version, output_dir, forge_version=loader_version, session=session)
@@ -333,15 +361,17 @@ def _setup_mods(config, output_dir: Path, dry_run: bool) -> None:
         _write_server_files(config, output_dir, jar_path, dry_run)
         return
 
+    from mc_helper.http_client import build_session
     from mc_helper.mods import curseforge as cf_mods
     from mc_helper.mods import modrinth as mr_mods
-    from mc_helper.http_client import build_session
 
     mods_cfg = config.mods
-    mc_ver = config.server.minecraft_version
-    loader = config.server.type if config.server.type not in ("vanilla", "paper", "purpur") else None
+    loader = (
+        config.server.type if config.server.type not in ("vanilla", "paper", "purpur") else None
+    )
 
     session = build_session()
+    mc_ver = _resolve_mc_version(session, config.server.minecraft_version)
     installed: list[str] = []
     errors: list[str] = []
 

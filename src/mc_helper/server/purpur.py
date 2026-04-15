@@ -46,7 +46,9 @@ def install(
     if session is None:
         session = build_session()
 
-    resolved_build = resolve_build(session, minecraft_version) if build.upper() == "LATEST" else build
+    resolved_build = (
+        resolve_build(session, minecraft_version) if build.upper() == "LATEST" else build
+    )
 
     url = f"{_API_BASE}/v2/purpur/{minecraft_version}/{resolved_build}/download"
     dest = output_dir / f"purpur-{minecraft_version}-{resolved_build}.jar"

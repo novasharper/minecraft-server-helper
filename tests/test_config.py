@@ -3,11 +3,10 @@ from pydantic import ValidationError
 
 from mc_helper.config import (
     RootConfig,
-    load_config,
     _interpolate_env,
     _interpolate_obj,
+    load_config,
 )
-
 
 # ── _interpolate_env ──────────────────────────────────────────────────────────
 

@@ -45,22 +45,24 @@ def _mod_search_response(mod_id: int = 238222, slug: str = "jei") -> dict:
 
 
 def _file_response(file_id: int = 4593548, filename: str = "jei-1.21.1-18.0.jar") -> dict:
+    cdn = f"https://edge.forgecdn.net/files/{file_id // 1000}/{file_id % 1000}/{filename}"
     return {
         "data": {
             "id": file_id,
             "fileName": filename,
-            "downloadUrl": f"https://edge.forgecdn.net/files/{file_id // 1000}/{file_id % 1000}/{filename}",
+            "downloadUrl": cdn,
         }
     }
 
 
 def _files_list_response(file_id: int = 4593548, filename: str = "jei-1.21.1-18.0.jar") -> dict:
+    cdn = f"https://edge.forgecdn.net/files/{file_id // 1000}/{file_id % 1000}/{filename}"
     return {
         "data": [
             {
                 "id": file_id,
                 "fileName": filename,
-                "downloadUrl": f"https://edge.forgecdn.net/files/{file_id // 1000}/{file_id % 1000}/{filename}",
+                "downloadUrl": cdn,
             }
         ]
     }

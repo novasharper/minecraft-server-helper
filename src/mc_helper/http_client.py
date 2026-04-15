@@ -34,11 +34,12 @@ def download_file(
     session: requests.Session | None = None,
     expected_sha1: str | None = None,
     expected_sha256: str | None = None,
+    expected_sha512: str | None = None,
     show_progress: bool = True,
 ) -> Path:
     """Download *url* to *dest*, showing a tqdm progress bar.
 
-    Optionally verify SHA-1 or SHA-256 after download.
+    Optionally verify SHA-1, SHA-256, or SHA-512 after download.
     Returns *dest*.
     """
     if session is None:
@@ -51,6 +52,7 @@ def download_file(
         total = int(resp.headers.get("Content-Length", 0)) or None
         sha1 = hashlib.sha1() if expected_sha1 else None
         sha256 = hashlib.sha256() if expected_sha256 else None
+        sha512 = hashlib.sha512() if expected_sha512 else None
 
         with (
             open(dest, "wb") as fh,
@@ -70,6 +72,8 @@ def download_file(
                     sha1.update(chunk)
                 if sha256:
                     sha256.update(chunk)
+                if sha512:
+                    sha512.update(chunk)
 
     if expected_sha1 and sha1:
         actual = sha1.hexdigest()
@@ -85,6 +89,14 @@ def download_file(
             dest.unlink(missing_ok=True)
             raise ValueError(
                 f"SHA-256 mismatch for {dest.name}: expected {expected_sha256}, got {actual}"
+            )
+
+    if expected_sha512 and sha512:
+        actual = sha512.hexdigest()
+        if actual != expected_sha512.lower():
+            dest.unlink(missing_ok=True)
+            raise ValueError(
+                f"SHA-512 mismatch for {dest.name}: expected {expected_sha512}, got {actual}"
             )
 
     return dest

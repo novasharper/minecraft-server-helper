@@ -1,9 +1,6 @@
 import json
 
-import pytest
-
 from mc_helper.manifest import Manifest
-
 
 # ── load / save ───────────────────────────────────────────────────────────────
 

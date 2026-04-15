@@ -190,5 +190,50 @@ def test_install_writes_manifest(tmp_path):
     m = Manifest(tmp_path)
     m.load()
     assert m.mc_version == "1.21.1"
-    assert m.loader_type == "fabric-loader"
+    assert m.loader_type == "fabric"
     assert m.loader_version == "0.15.0"
+
+
+@rsps_lib.activate
+def test_install_normalizes_loader_type_fabric(tmp_path):
+    """Modrinth dep key 'fabric-loader' must be saved as 'fabric', not raw."""
+    index = _minimal_index()  # dependencies: {"minecraft": "1.21.1", "fabric-loader": "0.15.0"}
+    mrpack_bytes = _make_mrpack(index)
+
+    rsps_lib.add(rsps_lib.GET, f"{_API}/project/fabric-pack/versions", json=[_make_version()])
+    rsps_lib.add(rsps_lib.GET, "https://cdn.modrinth.com/pack.mrpack", body=mrpack_bytes)
+
+    session = build_session()
+    install("fabric-pack", tmp_path, session=session, show_progress=False)
+
+    from mc_helper.manifest import Manifest
+    m = Manifest(tmp_path)
+    m.load()
+    assert m.loader_type == "fabric", f"Expected 'fabric', got {m.loader_type!r}"
+
+
+@rsps_lib.activate
+def test_install_prefers_sha512_over_sha1(tmp_path):
+    """When a modpack file provides sha512, it should be used instead of sha1."""
+    import hashlib
+    mod_bytes = b"some-mod-content"
+    sha512_hex = hashlib.sha512(mod_bytes).hexdigest()
+
+    index = _minimal_index(files=[
+        {
+            "path": "mods/mod.jar",
+            "env": {"server": "required"},
+            "downloads": ["https://cdn.modrinth.com/mod.jar"],
+            "hashes": {"sha512": sha512_hex, "sha1": "wrongsha1"},
+        }
+    ])
+    mrpack_bytes = _make_mrpack(index)
+
+    rsps_lib.add(rsps_lib.GET, f"{_API}/project/sha-pack/versions", json=[_make_version()])
+    rsps_lib.add(rsps_lib.GET, "https://cdn.modrinth.com/pack.mrpack", body=mrpack_bytes)
+    rsps_lib.add(rsps_lib.GET, "https://cdn.modrinth.com/mod.jar", body=mod_bytes)
+
+    session = build_session()
+    # Should not raise even though sha1 is wrong — sha512 is used instead
+    install("sha-pack", tmp_path, session=session, show_progress=False)
+    assert (tmp_path / "mods" / "mod.jar").read_bytes() == mod_bytes

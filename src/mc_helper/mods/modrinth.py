@@ -30,13 +30,15 @@ def parse_mod_spec(spec: str) -> tuple[str, str]:
     return spec, "LATEST"
 
 
-def _pick_primary_file(version: dict) -> tuple[str, str, str | None]:
-    """Return (url, filename, sha1_or_None) for the primary or first file in the version."""
+def _pick_primary_file(version: dict) -> tuple[str, str, str | None, str | None]:
+    """Return (url, filename, sha1_or_None, sha512_or_None) for the primary or first file."""
     for f in version.get("files", []):
         if f.get("primary"):
-            return f["url"], f["filename"], f.get("hashes", {}).get("sha1")
+            hashes = f.get("hashes", {})
+            return f["url"], f["filename"], hashes.get("sha1"), hashes.get("sha512")
     f = version["files"][0]
-    return f["url"], f["filename"], f.get("hashes", {}).get("sha1")
+    hashes = f.get("hashes", {})
+    return f["url"], f["filename"], hashes.get("sha1"), hashes.get("sha512")
 
 
 def install_mod(
@@ -70,9 +72,14 @@ def install_mod(
         return str(Path("mods") / _pick_primary_file(version)[1])
     _installed_projects.add(project_id)
 
-    url, filename, sha1 = _pick_primary_file(version)
+    url, filename, sha1, sha512 = _pick_primary_file(version)
     dest = output_dir / "mods" / filename
-    download_file(url, dest, session=session, expected_sha1=sha1, show_progress=show_progress)
+    effective_sha1 = sha1 if not sha512 else None
+    download_file(
+        url, dest, session=session,
+        expected_sha512=sha512, expected_sha1=effective_sha1,
+        show_progress=show_progress,
+    )
 
     # Recursively install required dependencies
     for dep in version.get("dependencies", []):

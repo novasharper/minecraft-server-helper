@@ -18,7 +18,6 @@ Workflow:
 """
 
 import fnmatch
-import io
 import json
 import zipfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -54,7 +53,9 @@ def resolve_version(
         for v in versions:
             if v["version_number"] == requested_version or v["id"] == requested_version:
                 return v
-        raise ValueError(f"Modrinth version '{requested_version}' not found for project '{project}'")
+        raise ValueError(
+            f"Modrinth version '{requested_version}' not found for project '{project}'"
+        )
 
     params: list[str] = []
     if minecraft_version:
@@ -180,8 +181,14 @@ def install(
                 rel_path = entry["path"]
                 dest = output_dir / rel_path
                 url = entry["downloads"][0]
-                sha1 = entry.get("hashes", {}).get("sha1")
-                download_file(url, dest, session=session, expected_sha1=sha1, show_progress=False)
+                hashes = entry.get("hashes", {})
+                sha512 = hashes.get("sha512")
+                sha1 = hashes.get("sha1") if not sha512 else None
+                download_file(
+                    url, dest, session=session,
+                    expected_sha512=sha512, expected_sha1=sha1,
+                    show_progress=False,
+                )
                 return rel_path
 
             with ThreadPoolExecutor(max_workers=_MAX_WORKERS) as pool:
@@ -198,10 +205,16 @@ def install(
         manifest.files = new_files
         deps = index.get("dependencies", {})
         manifest.mc_version = deps.get("minecraft", minecraft_version)
-        for loader_key in ("fabric-loader", "quilt-loader", "forge", "neoforge"):
-            if loader_key in deps:
-                manifest.loader_type = loader_key
-                manifest.loader_version = deps[loader_key]
+        _loader_key_map = {
+            "fabric-loader": "fabric",
+            "quilt-loader": "quilt",
+            "forge": "forge",
+            "neoforge": "neoforge",
+        }
+        for dep_key, normalized in _loader_key_map.items():
+            if dep_key in deps:
+                manifest.loader_type = normalized
+                manifest.loader_version = deps[dep_key]
                 break
         manifest.save()
 

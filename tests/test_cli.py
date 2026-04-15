@@ -1,15 +1,12 @@
 """Tests for cli.py — Phase 7: setup dispatch, server file writing, status command."""
 
 import json
-import os
 import stat
-import textwrap
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import ANY, MagicMock, patch
 
 import pytest
 import yaml
-
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -46,8 +43,8 @@ class TestWriteServerFiles:
     def _call(self, config_data: dict, tmp_path: Path, jar_path=None, dry_run=False):
         config_data["server"]["output_dir"] = str(tmp_path)
         cfg_file = _write_config(tmp_path, config_data)
-        from mc_helper.config import load_config
         from mc_helper.cli import _write_server_files
+        from mc_helper.config import load_config
 
         config = load_config(cfg_file)
         _write_server_files(config, tmp_path, jar_path, dry_run)
@@ -73,8 +70,8 @@ class TestWriteServerFiles:
         data["server"]["properties"] = {}
         data["server"]["output_dir"] = str(tmp_path)
         cfg_file = _write_config(tmp_path, data)
-        from mc_helper.config import load_config
         from mc_helper.cli import _write_server_files
+        from mc_helper.config import load_config
 
         config = load_config(cfg_file)
         _write_server_files(config, tmp_path, None, dry_run=False)
@@ -109,6 +106,34 @@ class TestWriteServerFiles:
         assert not (tmp_path / "launch.sh").exists()
         captured = capsys.readouterr()
         assert "[dry-run]" in captured.out
+
+    def test_server_properties_merge_preserves_comments(self, tmp_path):
+        """Re-running setup must preserve # comments and blank lines the server wrote."""
+        props_path = tmp_path / "server.properties"
+        props_path.write_text(
+            "# Minecraft server properties\n"
+            "\n"
+            "difficulty=easy\n"
+            "max-players=10\n"
+            "# Another comment\n"
+            "level-seed=abc123\n"
+        )
+        # Config overrides difficulty and max-players; level-seed and comments untouched
+        self._call(_base_config(), tmp_path)
+        result = props_path.read_text()
+        assert "# Minecraft server properties" in result
+        assert "# Another comment" in result
+        assert "level-seed=abc123" in result
+        assert "difficulty=normal" in result   # overwritten by config
+        assert "max-players=20" in result      # overwritten by config
+
+    def test_server_properties_merge_appends_new_keys(self, tmp_path):
+        """Keys in config that are not in the existing file must be appended."""
+        props_path = tmp_path / "server.properties"
+        props_path.write_text("difficulty=easy\n")
+        self._call(_base_config(), tmp_path)
+        result = props_path.read_text()
+        assert "motd=Test Server" in result
 
 
 # ── _install_server_jar ───────────────────────────────────────────────────────
@@ -176,6 +201,32 @@ class TestInstallServerJar:
         fake_jar = tmp_path / "purpur-1.21.1-2271.jar"
         with patch("mc_helper.server.purpur.install", return_value=fake_jar):
             result = _install_server_jar(config, tmp_path, dry_run=False)
+        assert result == fake_jar
+
+    def test_latest_minecraft_version_resolved_before_installer(self, tmp_path):
+        """'LATEST' must be resolved to a concrete version before calling the installer."""
+        from mc_helper.cli import _install_server_jar
+
+        data = _base_config("paper")
+        data["server"]["minecraft_version"] = "LATEST"
+        data["server"]["output_dir"] = str(tmp_path)
+        cfg_file = _write_config(tmp_path, data)
+        from mc_helper.config import load_config
+        config = load_config(cfg_file)
+
+        fake_jar = tmp_path / "paper-1.21.4-200.jar"
+        with (
+            patch(
+                "mc_helper.server.vanilla.resolve_version", return_value="1.21.4"
+            ) as mock_resolve,
+            patch("mc_helper.server.paper.install", return_value=fake_jar) as mock_paper,
+        ):
+            result = _install_server_jar(config, tmp_path, dry_run=False)
+
+        mock_resolve.assert_called_once_with(ANY, "LATEST")
+        # Paper must be called with the resolved version, not the string "LATEST"
+        call_args = mock_paper.call_args
+        assert call_args.args[0] == "1.21.4"
         assert result == fake_jar
 
 

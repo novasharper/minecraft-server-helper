@@ -59,7 +59,9 @@ def resolve_neoforge_version(
     if not versions:
         raise ValueError(f"No NeoForge versions found for Minecraft {minecraft_version}")
 
-    mc_minor = minecraft_version.split(".")[1] if not _use_forge_artifact(minecraft_version) else None
+    mc_minor = (
+        minecraft_version.split(".")[1] if not _use_forge_artifact(minecraft_version) else None
+    )
 
     # Filter to versions matching the MC minor series (e.g. 21.1.x for 1.21.1)
     if mc_minor:
