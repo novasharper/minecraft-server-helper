@@ -1,32 +1,12 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code when working in this directory.
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## What This Is
 
 `minecraft-server-helper` is a Python CLI (`mc-helper`) that prepares a Minecraft server directory without Docker. It downloads server JARs, installs mod loaders, and fetches modpacks/mods from CurseForge or Modrinth — driven by a single YAML config file.
 
-See `PLAN.md` for full design details and `TODO.md` for implementation status.
-
-## Project Layout
-
-```
-minecraft-server-helper/
-├── pyproject.toml
-├── example-config.yaml
-├── src/
-│   └── mc_helper/
-│       ├── cli.py              # Click entry point: setup, validate, status
-│       ├── config.py           # Pydantic v2 models + YAML loader
-│       ├── http_client.py      # requests.Session with retry + tqdm progress
-│       ├── manifest.py         # JSON state tracking (.mc-helper-manifest.json)
-│       ├── utils.py            # version comparison, glob cleanup, env interpolation
-│       ├── server/             # vanilla, fabric, forge, neoforge, paper, purpur
-│       ├── modpack/            # curseforge, modrinth
-│       ├── pack/               # server_pack (pre-assembled ZIP/tar.gz)
-│       └── mods/               # individual mod installers
-└── tests/
-```
+See `PLAN.md` for full design details, `TODO.md` for implementation status, and `docs/` for user-facing reference documentation.
 
 ## Setup
 
@@ -53,17 +33,42 @@ poetry run ruff format src/ tests/
 # Validate a config file
 poetry run mc-helper validate --config example-config.yaml
 
-# Set up a server
-poetry run mc-helper setup --config example-config.yaml
+# Dry-run setup (no downloads)
+poetry run mc-helper setup --config example-config.yaml --dry-run
 ```
 
-## Key Design Decisions
+## Architecture
 
-- **Config**: Pydantic v2 models; `${VAR}` env interpolation before validation; exactly one of `modpack` / `mods` / `server_pack` must be present.
-- **HTTP**: `requests.Session` with 5-attempt exponential backoff; `download_file()` shows tqdm progress.
-- **Manifest**: `.mc-helper-manifest.json` in `output_dir` tracks installed files; re-runs skip unchanged, delete stale.
-- **Parallelism**: Individual mod downloads use `ThreadPoolExecutor` (max 10 workers).
-- **Server pack**: SHA-1 checksum stored in manifest; skips re-extraction if unchanged and `force_update` is false.
+### CLI dispatch (`cli.py`)
+
+The entry point uses `argparse` (not Click). `_cmd_setup` dispatches based on which install mode is active:
+
+1. `server_pack` → `_setup_server_pack()` → `pack/server_pack.py`
+2. `modpack` → `_setup_modpack()` → `modpack/curseforge.py` or `modpack/modrinth.py`
+3. `mods` → `_setup_mods()` → parallel `mods/curseforge.py` + `mods/modrinth.py`, then `_install_server_jar()`
+4. *(none)* → `_install_server_jar()` only
+
+After install, `_write_server_files()` always writes `eula.txt`, `server.properties`, and `launch.sh`. Modpack installers handle server JAR installation themselves (embedded in pack metadata); `_install_server_jar()` is only called explicitly for the `mods` and bare-server cases.
+
+### Config (`config.py`)
+
+Pydantic v2 models. YAML is loaded → `${VAR}` env interpolation runs on all string values → `model_validate()`. A `RootConfig` model validator enforces exactly one of `modpack` / `mods` / `server_pack`. The `server.properties` map keys are written verbatim as `server.properties` entries.
+
+### Manifest (`manifest.py`)
+
+`.mc-helper-manifest.json` in `output_dir` tracks `mc_version`, `loader_type`, `loader_version`, `pack_sha1`, and `files: list[str]`. On re-run: stale files (in manifest but not in new list) are deleted; the manifest is rewritten. For `server_pack`, the SHA-1 of the archive is stored; extraction is skipped if it matches and `force_update` is false.
+
+### HTTP (`http_client.py`)
+
+`build_session()` returns a `requests.Session` with 5-attempt exponential backoff (retries on 429/500/502/503/504). `download_file()` streams to disk with a tqdm progress bar and optional SHA-1/SHA-256 verification; the partial file is deleted if verification fails.
+
+### Server installers (`server/`)
+
+Each module exposes `install(minecraft_version, output_dir, ...) -> Path | None`. Vanilla, Fabric, Paper, Purpur return the installed JAR path. Forge and NeoForge run `java -jar <installer>.jar --installServer` as a subprocess and return `None` (the installer creates its own `run.sh`).
+
+### Parallelism
+
+`_setup_mods()` submits all Modrinth and CurseForge mod downloads to a `ThreadPoolExecutor(max_workers=10)`. Errors are collected per-mod; all are reported before exiting non-zero if any failed.
 
 ## Reference Sources (in parent repo)
 
