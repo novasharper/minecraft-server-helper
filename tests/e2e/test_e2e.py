@@ -68,14 +68,14 @@ def _assert_mods_populated(output_dir: Path) -> None:
 # ── Server pack tests ─────────────────────────────────────────────────────────
 
 
-def test_server_pack_gtnh():
+def test_modpack_serverpack_gtnh():
     """GT: New Horizons 2.8.4 installed from a direct-URL server pack."""
     result = _run("server-pack-gtnh.yaml")
     assert result.returncode == 0, "mc-helper exited non-zero"
     _assert_basic_files(E2E_OUTPUT_BASE / "gtnh")
 
 
-def test_server_pack_tfg():
+def test_modpack_serverpack_tfg():
     """TerraFirmaGreg Modern v0.11.28 installed from a GitHub release asset."""
     result = _run("server-pack-tfg.yaml")
     assert result.returncode == 0, "mc-helper exited non-zero"
