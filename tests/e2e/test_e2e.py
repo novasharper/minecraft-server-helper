@@ -114,3 +114,71 @@ def test_modpack_all_of_create():
     output_dir = E2E_OUTPUT_BASE / "aoc"
     _assert_basic_files(output_dir)
     _assert_mods_populated(output_dir)
+
+
+# ── Pure server type tests ────────────────────────────────────────────────────
+
+
+def _assert_server_artifact(output_dir: Path, pattern: str) -> None:
+    """Assert that the server-type-specific file or glob pattern exists."""
+    if "*" in pattern:
+        matches = list(output_dir.glob(pattern))
+        assert matches, f"expected server artifact {pattern!r} not found in {output_dir}"
+    else:
+        assert (output_dir / pattern).exists(), (
+            f"expected server artifact {pattern!r} not found in {output_dir}"
+        )
+
+
+def test_server_vanilla():
+    """Vanilla 1.21.4 server JAR installed."""
+    result = _run("server-vanilla.yaml")
+    assert result.returncode == 0, "mc-helper exited non-zero"
+    output_dir = E2E_OUTPUT_BASE / "vanilla"
+    _assert_basic_files(output_dir)
+    _assert_server_artifact(output_dir, "minecraft_server.*.jar")
+
+
+def test_server_fabric():
+    """Fabric 1.21.4 server launcher JAR installed."""
+    result = _run("server-fabric.yaml")
+    assert result.returncode == 0, "mc-helper exited non-zero"
+    output_dir = E2E_OUTPUT_BASE / "fabric"
+    _assert_basic_files(output_dir)
+    _assert_server_artifact(output_dir, "fabric-server-launch.jar")
+
+
+def test_server_forge():
+    """Forge 1.21.1 server installed via --installServer (creates run.sh)."""
+    result = _run("server-forge.yaml")
+    assert result.returncode == 0, "mc-helper exited non-zero"
+    output_dir = E2E_OUTPUT_BASE / "forge"
+    _assert_basic_files(output_dir)
+    _assert_server_artifact(output_dir, "run.sh")
+
+
+def test_server_neoforge():
+    """NeoForge 1.21.4 server installed via --installServer (creates run.sh)."""
+    result = _run("server-neoforge.yaml")
+    assert result.returncode == 0, "mc-helper exited non-zero"
+    output_dir = E2E_OUTPUT_BASE / "neoforge"
+    _assert_basic_files(output_dir)
+    _assert_server_artifact(output_dir, "run.sh")
+
+
+def test_server_paper():
+    """Paper 1.21.4 server JAR installed."""
+    result = _run("server-paper.yaml")
+    assert result.returncode == 0, "mc-helper exited non-zero"
+    output_dir = E2E_OUTPUT_BASE / "paper"
+    _assert_basic_files(output_dir)
+    _assert_server_artifact(output_dir, "paper-*.jar")
+
+
+def test_server_purpur():
+    """Purpur 1.21.4 server JAR installed."""
+    result = _run("server-purpur.yaml")
+    assert result.returncode == 0, "mc-helper exited non-zero"
+    output_dir = E2E_OUTPUT_BASE / "purpur"
+    _assert_basic_files(output_dir)
+    _assert_server_artifact(output_dir, "purpur-*.jar")

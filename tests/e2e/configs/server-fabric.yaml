@@ -1,0 +1,6 @@
+server:
+  type: fabric
+  minecraft_version: "1.21.4"
+  output_dir: ${E2E_OUTPUT_DIR}/fabric
+  eula: true
+  memory: 1G

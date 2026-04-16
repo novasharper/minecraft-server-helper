@@ -1,0 +1,6 @@
+server:
+  type: forge
+  minecraft_version: "1.21.1"
+  output_dir: ${E2E_OUTPUT_DIR}/forge
+  eula: true
+  memory: 2G

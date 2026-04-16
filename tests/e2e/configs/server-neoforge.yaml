@@ -1,0 +1,6 @@
+server:
+  type: neoforge
+  minecraft_version: "1.21.4"
+  output_dir: ${E2E_OUTPUT_DIR}/neoforge
+  eula: true
+  memory: 2G
