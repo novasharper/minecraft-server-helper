@@ -10,13 +10,20 @@ RUN dnf install -y \
     java-21-openjdk-headless \
     && dnf clean all
 
+RUN useradd --create-home --uid 1000 mchelper
+
 WORKDIR /app
 COPY pyproject.toml ./
 COPY src/ ./src/
-
-# Install the mc-helper entry point without reinstalling RPM-managed deps
-RUN pip3 install --no-deps -e .
-
 COPY tests/e2e/ ./tests/e2e/
+RUN chown -R mchelper:mchelper /app
+
+USER mchelper
+
+# Install the mc-helper entry point without reinstalling RPM-managed deps.
+# --user puts the script under ~/.local/bin, which is on PATH for login shells
+# but not always for non-login ones — set it explicitly.
+RUN pip3 install --no-deps --user -e .
+ENV PATH="/home/mchelper/.local/bin:${PATH}"
 
 CMD ["pytest", "tests/e2e/test_e2e.py", "-v", "--tb=short"]
