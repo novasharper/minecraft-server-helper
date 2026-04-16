@@ -43,11 +43,10 @@ poetry run mc-helper setup --config example-config.yaml --dry-run
 
 The entry point uses `argparse` (not Click). `_cmd_setup` runs the base install mode first, then optionally installs extra mods:
 
-1. `server_pack` → `_setup_server_pack()` → `pack/server_pack.py`
-2. `modpack` → `_setup_modpack()` → `modpack/curseforge.py`, `modpack/modrinth.py`, or `modpack/ftb.py`
-3. `mods` only → `_setup_mods()` → `_download_mods()` (parallel), then `_install_server_jar()`
-4. *(none)* → `_install_server_jar()` only
-5. If `mods` is set alongside `server_pack` or `modpack` → `_install_extra_mods()` runs after the base step
+1. `modpack` or `server_pack` → `_setup_modpack()` / `_setup_server_pack()` → `modpack/` package (`curseforge.py`, `modrinth.py`, `ftb.py`, `server_pack.py`)
+2. `mods` only → `_setup_mods()` → `_download_mods()` (parallel), then `_install_server_jar()`
+3. *(none)* → `_install_server_jar()` only
+4. If `mods` is set alongside `server_pack` or `modpack` → `_install_extra_mods()` runs after the base step
 
 `_download_mods()` is a shared helper used by both `_setup_mods()` and `_install_extra_mods()`. After install, `_write_server_files()` always writes `eula.txt`, `server.properties`, and `launch.sh`. Modpack installers handle server JAR installation themselves (embedded in pack metadata); `_install_server_jar()` is only called explicitly for the `mods` and bare-server cases.
 

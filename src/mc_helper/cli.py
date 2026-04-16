@@ -11,7 +11,7 @@ from mc_helper.modpack import ftb as modpack_ftb
 from mc_helper.modpack import modrinth as modpack_mr
 from mc_helper.mods import curseforge as cf_mods
 from mc_helper.mods import modrinth as mr_mods
-from mc_helper.pack import server_pack
+from mc_helper.modpack import server_pack
 from mc_helper.server import fabric, forge, neoforge, paper, purpur, vanilla
 from mc_helper.server.vanilla import resolve_version
 
