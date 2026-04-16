@@ -145,10 +145,10 @@ def _install_server_jar(config, output_dir: Path, dry_run: bool) -> Path | None:
     mc_version = _resolve_mc_version(session, server.minecraft_version)
 
     if server.type == "vanilla":
-        return vanilla.VanillaInstaller(mc_version, session=session).install(output_dir)
+        jar_path = vanilla.VanillaInstaller(mc_version, session=session).install(output_dir)
 
     elif server.type == "fabric":
-        return fabric.FabricInstaller(
+        jar_path = fabric.FabricInstaller(
             mc_version,
             loader_version=server.loader_version,
             session=session,
@@ -160,7 +160,7 @@ def _install_server_jar(config, output_dir: Path, dry_run: bool) -> Path | None:
             forge_version=server.loader_version,
             session=session,
         ).install(output_dir)
-        return None  # forge --installServer creates its own run.sh
+        jar_path = None  # forge --installServer creates its own run.sh
 
     elif server.type == "neoforge":
         neoforge.NeoForgeInstaller(
@@ -168,16 +168,28 @@ def _install_server_jar(config, output_dir: Path, dry_run: bool) -> Path | None:
             neoforge_version=server.loader_version,
             session=session,
         ).install(output_dir)
-        return None  # neoforge --installServer creates its own run.sh
+        jar_path = None  # neoforge --installServer creates its own run.sh
 
     elif server.type == "paper":
-        return paper.PaperInstaller(mc_version, session=session).install(output_dir)
+        jar_path = paper.PaperInstaller(mc_version, session=session).install(output_dir)
 
     elif server.type == "purpur":
-        return purpur.PurpurInstaller(mc_version, session=session).install(output_dir)
+        jar_path = purpur.PurpurInstaller(mc_version, session=session).install(output_dir)
 
     else:
         raise ValueError(f"Unknown or unsupported server type: {server.type!r}")
+
+    manifest = Manifest(output_dir)
+    manifest.load()
+    manifest.mc_version = mc_version
+    manifest.loader_type = server.type
+    if server.type not in ("vanilla", "paper", "purpur"):
+        manifest.loader_version = server.loader_version
+    if jar_path is not None:
+        manifest.add_file(jar_path.relative_to(output_dir))
+    manifest.save()
+
+    return jar_path
 
 
 def _write_server_files(
