@@ -102,7 +102,7 @@ def test_resolve_version_latest_picks_first_release():
         _make_version("beta", "2.1.0-beta"),
         _make_version("release", "1.0.0"),
     ]
-    rsps_lib.add(rsps_lib.GET, f"{_API}/project/my-pack/versions", json=versions)
+    rsps_lib.add(rsps_lib.GET, f"{_API}/project/my-pack/version", json=versions)
     session = build_session()
     v = resolve_version(session, "my-pack", "1.21.1", "fabric")
     assert v["version_number"] == "2.0.0"
@@ -111,7 +111,7 @@ def test_resolve_version_latest_picks_first_release():
 @rsps_lib.activate
 def test_resolve_version_specific():
     versions = [_make_version("release", "1.5.0")]
-    rsps_lib.add(rsps_lib.GET, f"{_API}/project/my-pack/versions", json=versions)
+    rsps_lib.add(rsps_lib.GET, f"{_API}/project/my-pack/version", json=versions)
     session = build_session()
     v = resolve_version(session, "my-pack", None, None, requested_version="1.5.0")
     assert v["version_number"] == "1.5.0"
@@ -119,7 +119,7 @@ def test_resolve_version_specific():
 
 @rsps_lib.activate
 def test_resolve_version_not_found_raises():
-    rsps_lib.add(rsps_lib.GET, f"{_API}/project/my-pack/versions", json=[])
+    rsps_lib.add(rsps_lib.GET, f"{_API}/project/my-pack/version", json=[])
     session = build_session()
     import pytest
 
@@ -147,7 +147,7 @@ def test_install_downloads_files(tmp_path):
 
     rsps_lib.add(
         rsps_lib.GET,
-        f"{_API}/project/test-pack/versions",
+        f"{_API}/project/test-pack/version",
         json=[_make_version()],
     )
     rsps_lib.add(rsps_lib.GET, "https://cdn.modrinth.com/pack.mrpack", body=mrpack_bytes)
@@ -176,7 +176,7 @@ def test_install_skips_client_only(tmp_path):
     )
     mrpack_bytes = _make_mrpack(index)
 
-    rsps_lib.add(rsps_lib.GET, f"{_API}/project/test-pack/versions", json=[_make_version()])
+    rsps_lib.add(rsps_lib.GET, f"{_API}/project/test-pack/version", json=[_make_version()])
     rsps_lib.add(rsps_lib.GET, "https://cdn.modrinth.com/pack.mrpack", body=mrpack_bytes)
     # client-only should NOT be downloaded — no mock registered for it
 
@@ -191,7 +191,7 @@ def test_install_extracts_overrides(tmp_path):
     index = _minimal_index()
     mrpack_bytes = _make_mrpack(index, overrides={"config/server.cfg": b"setting=true"})
 
-    rsps_lib.add(rsps_lib.GET, f"{_API}/project/test-pack/versions", json=[_make_version()])
+    rsps_lib.add(rsps_lib.GET, f"{_API}/project/test-pack/version", json=[_make_version()])
     rsps_lib.add(rsps_lib.GET, "https://cdn.modrinth.com/pack.mrpack", body=mrpack_bytes)
 
     session = build_session()
@@ -205,7 +205,7 @@ def test_install_writes_manifest(tmp_path):
     index = _minimal_index()
     mrpack_bytes = _make_mrpack(index)
 
-    rsps_lib.add(rsps_lib.GET, f"{_API}/project/test-pack/versions", json=[_make_version()])
+    rsps_lib.add(rsps_lib.GET, f"{_API}/project/test-pack/version", json=[_make_version()])
     rsps_lib.add(rsps_lib.GET, "https://cdn.modrinth.com/pack.mrpack", body=mrpack_bytes)
 
     session = build_session()
@@ -226,7 +226,7 @@ def test_install_normalizes_loader_type_fabric(tmp_path):
     index = _minimal_index()  # dependencies: {"minecraft": "1.21.1", "fabric-loader": "0.15.0"}
     mrpack_bytes = _make_mrpack(index)
 
-    rsps_lib.add(rsps_lib.GET, f"{_API}/project/fabric-pack/versions", json=[_make_version()])
+    rsps_lib.add(rsps_lib.GET, f"{_API}/project/fabric-pack/version", json=[_make_version()])
     rsps_lib.add(rsps_lib.GET, "https://cdn.modrinth.com/pack.mrpack", body=mrpack_bytes)
 
     session = build_session()
@@ -259,7 +259,7 @@ def test_install_prefers_sha512_over_sha1(tmp_path):
     )
     mrpack_bytes = _make_mrpack(index)
 
-    rsps_lib.add(rsps_lib.GET, f"{_API}/project/sha-pack/versions", json=[_make_version()])
+    rsps_lib.add(rsps_lib.GET, f"{_API}/project/sha-pack/version", json=[_make_version()])
     rsps_lib.add(rsps_lib.GET, "https://cdn.modrinth.com/pack.mrpack", body=mrpack_bytes)
     rsps_lib.add(rsps_lib.GET, "https://cdn.modrinth.com/mod.jar", body=mod_bytes)
 
@@ -291,7 +291,7 @@ def test_install_global_slug_excludes_mod(tmp_path, monkeypatch):
     )
     mrpack_bytes = _make_mrpack(index)
 
-    rsps_lib.add(rsps_lib.GET, f"{_API}/project/test-pack/versions", json=[_make_version()])
+    rsps_lib.add(rsps_lib.GET, f"{_API}/project/test-pack/version", json=[_make_version()])
     rsps_lib.add(rsps_lib.GET, "https://cdn.modrinth.com/pack.mrpack", body=mrpack_bytes)
     # Batch slug resolution: project_id → "sodium"
     rsps_lib.add(

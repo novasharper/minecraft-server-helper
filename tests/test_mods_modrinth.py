@@ -66,7 +66,7 @@ def _make_version(
 def test_install_mod_downloads_jar(tmp_path):
     jar_bytes = b"fake-jar-content"
     version = _make_version()
-    rsps_lib.add(rsps_lib.GET, f"{_API}/project/fabric-api/versions", json=[version])
+    rsps_lib.add(rsps_lib.GET, f"{_API}/project/fabric-api/version", json=[version])
     rsps_lib.add(
         rsps_lib.GET,
         "https://cdn.modrinth.com/fabric-api-0.100.0+1.21.1.jar",
@@ -94,7 +94,7 @@ def test_install_mod_specific_version(tmp_path):
         filename="fabric-api-0.90.0+1.20.4.jar",
         sha1=_SHA1[b"specific-version-jar"],
     )
-    rsps_lib.add(rsps_lib.GET, f"{_API}/project/fabric-api/versions", json=[version])
+    rsps_lib.add(rsps_lib.GET, f"{_API}/project/fabric-api/version", json=[version])
     rsps_lib.add(
         rsps_lib.GET,
         "https://cdn.modrinth.com/fabric-api-0.90.0+1.20.4.jar",
@@ -116,7 +116,7 @@ def test_install_mod_specific_version(tmp_path):
 def test_install_mod_creates_mods_subdir(tmp_path):
     jar_bytes = b"fake-jar-content"
     version = _make_version()
-    rsps_lib.add(rsps_lib.GET, f"{_API}/project/fabric-api/versions", json=[version])
+    rsps_lib.add(rsps_lib.GET, f"{_API}/project/fabric-api/version", json=[version])
     rsps_lib.add(
         rsps_lib.GET, "https://cdn.modrinth.com/fabric-api-0.100.0+1.21.1.jar", body=jar_bytes
     )
@@ -145,7 +145,7 @@ def test_install_mod_falls_back_to_first_file_when_no_primary(tmp_path):
         "game_versions": ["1.21.1"],
         "loaders": ["fabric"],
     }
-    rsps_lib.add(rsps_lib.GET, f"{_API}/project/some-mod/versions", json=[version])
+    rsps_lib.add(rsps_lib.GET, f"{_API}/project/some-mod/version", json=[version])
     rsps_lib.add(rsps_lib.GET, "https://cdn.modrinth.com/mod-1.0.0.jar", body=jar_bytes)
 
     session = build_session()
@@ -157,7 +157,7 @@ def test_install_mod_falls_back_to_first_file_when_no_primary(tmp_path):
 
 @rsps_lib.activate
 def test_install_mod_version_not_found_raises(tmp_path):
-    rsps_lib.add(rsps_lib.GET, f"{_API}/project/no-such-mod/versions", json=[])
+    rsps_lib.add(rsps_lib.GET, f"{_API}/project/no-such-mod/version", json=[])
 
     session = build_session()
     with pytest.raises(ValueError, match="No Modrinth versions"):
@@ -179,7 +179,7 @@ def test_install_mod_beta_fallback(tmp_path):
         version_number="2.0-beta",
         sha1=_SHA1[b"beta-jar"],
     )
-    rsps_lib.add(rsps_lib.GET, f"{_API}/project/beta-mod/versions", json=[version])
+    rsps_lib.add(rsps_lib.GET, f"{_API}/project/beta-mod/version", json=[version])
     rsps_lib.add(rsps_lib.GET, "https://cdn.modrinth.com/mod-2.0-beta.jar", body=jar_bytes)
 
     session = build_session()
@@ -211,7 +211,7 @@ def test_install_mod_prefers_sha512_over_sha1(tmp_path):
         "game_versions": ["1.21.1"],
         "loaders": ["fabric"],
     }
-    rsps_lib.add(rsps_lib.GET, f"{_API}/project/sha-mod/versions", json=[version])
+    rsps_lib.add(rsps_lib.GET, f"{_API}/project/sha-mod/version", json=[version])
     rsps_lib.add(rsps_lib.GET, "https://cdn.modrinth.com/mod-1.0.0.jar", body=jar_bytes)
 
     session = build_session()

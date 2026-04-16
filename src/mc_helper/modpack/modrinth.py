@@ -80,7 +80,7 @@ def resolve_version(
     """Return the best matching version object for the project."""
     if requested_version and requested_version.upper() != "LATEST":
         # Specific version number or ID — try direct lookup first
-        versions = get_json(session, f"{_API_BASE}/project/{project}/versions")
+        versions = get_json(session, f"{_API_BASE}/project/{project}/version")
         for v in versions:
             if v["version_number"] == requested_version or v["id"] == requested_version:
                 return v
