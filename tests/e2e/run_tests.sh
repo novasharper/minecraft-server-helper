@@ -28,16 +28,12 @@ if [ -z "$CONTAINER_RUNTIME" ]; then
 fi
 
 IMAGE=mc-helper-e2e
-OUTPUT_DIR="${E2E_OUTPUT_DIR:-./e2e-output}"
-mkdir -p "$OUTPUT_DIR"
 
 echo "==> Building $IMAGE with $CONTAINER_RUNTIME..."
 "$CONTAINER_RUNTIME" build -t "$IMAGE" -f "$SCRIPT_DIR/Containerfile" "$REPO_ROOT"
 
-echo "==> Running e2e tests (output mounted at $OUTPUT_DIR)..."
+echo "==> Running e2e tests..."
 "$CONTAINER_RUNTIME" run --rm \
     -e CF_API_KEY="${CF_API_KEY:-}" \
-    -e E2E_OUTPUT_DIR=/tmp/e2e-output \
-    -v "$OUTPUT_DIR:/tmp/e2e-output" \
     "$IMAGE" \
     pytest tests/e2e/test_e2e.py -v --tb=short "$@"

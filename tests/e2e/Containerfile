@@ -23,7 +23,9 @@ USER mchelper
 # Install the mc-helper entry point without reinstalling RPM-managed deps.
 # --user puts the script under ~/.local/bin, which is on PATH for login shells
 # but not always for non-login ones — set it explicitly.
-RUN pip3 install --no-deps --user -e .
+RUN pip3 install --no-deps --user -e . \
+ && mkdir -p /tmp/e2e-output
 ENV PATH="/home/mchelper/.local/bin:${PATH}"
+ENV E2E_OUTPUT_DIR=/tmp/e2e-output
 
 CMD ["pytest", "tests/e2e/test_e2e.py", "-v", "--tb=short"]
