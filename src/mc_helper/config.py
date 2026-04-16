@@ -45,7 +45,7 @@ ServerType = Literal["vanilla", "forge", "neoforge", "fabric", "paper", "purpur"
 
 
 class ServerConfig(BaseModel):
-    type: ServerType
+    type: Optional[ServerType] = None
     minecraft_version: Optional[str] = None
     loader_version: str = "LATEST"
     output_dir: Path = Path("./server")
@@ -160,4 +160,7 @@ class RootConfig(BaseModel):
     def _check_install_mode(self) -> "RootConfig":
         if self.modpack and self.server_pack:
             raise ValueError("modpack and server_pack cannot both be set")
+        if self.modpack is None and self.server_pack is None:
+            if self.server.type is None:
+                raise ValueError("server.type is required when not using modpack or server_pack")
         return self

@@ -17,33 +17,52 @@ from mc_helper.server.vanilla import resolve_version
 
 
 def main() -> None:
+    # Shared parent so every subparser accepts --config after the subcommand name.
+    # SUPPRESS default means the subparser won't overwrite a value already set by
+    # the main parser when --config appears before the subcommand.
+    _config_parent = argparse.ArgumentParser(add_help=False)
+    _config_parent.add_argument(
+        "--config",
+        metavar="FILE",
+        default=argparse.SUPPRESS,
+        help="Path to the YAML configuration file.",
+    )
+
     parser = argparse.ArgumentParser(
         prog="mc-helper",
         description="Download and configure a Minecraft server from a YAML config file.",
     )
+    # Also on the main parser (default=None) so --config before the subcommand works.
     parser.add_argument(
         "--config",
         metavar="FILE",
-        required=True,
+        default=None,
         help="Path to the YAML configuration file.",
     )
 
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     # setup
-    setup_parser = subparsers.add_parser("setup", help="Download and install the server.")
+    setup_parser = subparsers.add_parser(
+        "setup", parents=[_config_parent], help="Download and install the server."
+    )
     setup_parser.add_argument("--output-dir", metavar="DIR", help="Override server.output_dir.")
     setup_parser.add_argument(
         "--dry-run", action="store_true", help="Log actions without downloading."
     )
 
     # validate
-    subparsers.add_parser("validate", help="Validate the configuration file.")
+    subparsers.add_parser("validate", parents=[_config_parent], help="Validate the configuration file.")
 
     # status
-    subparsers.add_parser("status", help="Show installed server state from the manifest.")
+    subparsers.add_parser(
+        "status", parents=[_config_parent], help="Show installed server state from the manifest."
+    )
 
     args = parser.parse_args()
+
+    if not args.config:
+        parser.error("argument --config is required")
 
     if args.command == "validate":
         _cmd_validate(args)
@@ -98,7 +117,7 @@ def _cmd_setup(args: argparse.Namespace) -> None:
 
 def _resolve_mc_version(session, version: str) -> str:
     """Resolve 'LATEST' / 'SNAPSHOT' to a concrete Minecraft release version."""
-    if version.upper() not in ("LATEST", "SNAPSHOT"):
+    if version and (version.upper() not in ("LATEST", "SNAPSHOT")):
         return version
     return resolve_version(session, version)
 
@@ -110,6 +129,9 @@ def _install_server_jar(config, output_dir: Path, dry_run: bool) -> Path | None:
     create their own run script via --installServer).
     """
     server = config.server
+
+    if server.type is None:
+        raise ValueError("server.type must be set for this installation mode")
 
     if dry_run:
         print(
@@ -158,7 +180,9 @@ def _install_server_jar(config, output_dir: Path, dry_run: bool) -> Path | None:
         raise ValueError(f"Unknown or unsupported server type: {server.type!r}")
 
 
-def _write_server_files(config, output_dir: Path, jar_path: Path | None, dry_run: bool) -> None:
+def _write_server_files(
+    config, output_dir: Path, jar_path: Path | None, dry_run: bool, effective_type: str | None = None
+) -> None:
     """Write eula.txt, server.properties, and launch.sh into output_dir."""
     server = config.server
 
@@ -207,12 +231,13 @@ def _write_server_files(config, output_dir: Path, jar_path: Path | None, dry_run
     # launch.sh
     launch_path = output_dir / "launch.sh"
     mem = server.memory
+    resolved_type = effective_type or server.type
     if jar_path is not None:
         jar_name = jar_path.name
         launch_content = (
             f"#!/bin/sh\n" f'exec java -Xmx{mem} -Xms{mem} -jar {jar_name} nogui "$@"\n'
         )
-    elif server.type in ("forge", "neoforge"):
+    elif resolved_type in ("forge", "neoforge"):
         launch_content = (
             "#!/bin/sh\n"
             "# The Forge/NeoForge installer created run.sh — invoke it here.\n"
@@ -263,11 +288,16 @@ def _setup_modpack(config, output_dir: Path, dry_run: bool) -> None:
 
     output_dir.mkdir(parents=True, exist_ok=True)
     loader = (
-        config.server.type if config.server.type not in ("vanilla", "paper", "purpur") else None
+        config.server.type
+        if config.server.type not in (None, "vanilla", "paper", "purpur")
+        else None
     )
 
     session = build_session()
-    mc_version = _resolve_mc_version(session, config.server.minecraft_version)
+    if config.server.minecraft_version:
+        mc_version = _resolve_mc_version(session, config.server.minecraft_version)
+    else:
+        mc_version = None
 
     if mp.platform == "modrinth":
         modpack_mr.ModrinthPackInstaller(
@@ -331,7 +361,7 @@ def _setup_modpack(config, output_dir: Path, dry_run: bool) -> None:
     else:
         raise ValueError(f"Unknown loader type from modpack manifest: {loader_type!r}")
 
-    _write_server_files(config, output_dir, jar_path, dry_run)
+    _write_server_files(config, output_dir, jar_path, dry_run, effective_type=loader_type)
     print(f"Modpack installed to {output_dir}")
 
 
@@ -411,7 +441,9 @@ def _setup_mods(config, output_dir: Path, dry_run: bool) -> None:
         return
 
     loader = (
-        config.server.type if config.server.type not in ("vanilla", "paper", "purpur") else None
+        config.server.type
+        if config.server.type not in (None, "vanilla", "paper", "purpur")
+        else None
     )
     session = build_session()
     mc_ver = _resolve_mc_version(session, config.server.minecraft_version)
@@ -446,7 +478,9 @@ def _install_extra_mods(config, output_dir: Path, dry_run: bool) -> None:
             "Re-run setup to reinstall the base pack."
         )
     loader = manifest.loader_type or (
-        config.server.type if config.server.type not in ("vanilla", "paper", "purpur") else None
+        config.server.type
+        if config.server.type not in (None, "vanilla", "paper", "purpur")
+        else None
     )
 
     session = build_session()

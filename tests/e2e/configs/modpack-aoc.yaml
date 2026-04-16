@@ -1,0 +1,12 @@
+# All of Create — CurseForge modpack
+# https://www.curseforge.com/minecraft/modpacks/aoc
+# Requires CF_API_KEY environment variable
+server:
+  output_dir: ${E2E_OUTPUT_DIR}/aoc
+  eula: true
+  memory: 2G
+
+modpack:
+  platform: curseforge
+  slug: aoc
+  api_key: ${CF_API_KEY}

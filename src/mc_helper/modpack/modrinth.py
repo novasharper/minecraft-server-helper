@@ -94,7 +94,7 @@ def resolve_version(
     if loader:
         params.append(f'loaders=["{loader}"]')
     query = "&".join(params)
-    url = f"{_API_BASE}/project/{project}/versions"
+    url = f"{_API_BASE}/project/{project}/version"
     if query:
         url += f"?{query}"
 

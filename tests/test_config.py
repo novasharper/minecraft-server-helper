@@ -62,6 +62,23 @@ def test_server_invalid_type():
         RootConfig.model_validate({"server": {"type": "invalid"}})
 
 
+def test_server_type_optional_with_modpack():
+    data = {"server": {"eula": True}, "modpack": {"platform": "modrinth", "project": "fabric-api"}}
+    cfg = RootConfig.model_validate(data)
+    assert cfg.server.type is None
+
+
+def test_server_type_optional_with_server_pack():
+    data = {"server": {"eula": True}, "server_pack": {"url": "https://example.com/pack.zip"}}
+    cfg = RootConfig.model_validate(data)
+    assert cfg.server.type is None
+
+
+def test_server_type_required_without_modpack_or_server_pack():
+    with pytest.raises(ValidationError, match="server.type is required"):
+        RootConfig.model_validate({"server": {}})
+
+
 def test_server_properties():
     data = _minimal_data()
     data["server"]["properties"] = {"max_players": 10, "online_mode": False}

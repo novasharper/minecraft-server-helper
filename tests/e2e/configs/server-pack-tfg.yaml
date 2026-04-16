@@ -1,0 +1,10 @@
+# TerraFirmaGreg Modern v0.11.28 — GitHub release server pack
+server:
+  output_dir: ${E2E_OUTPUT_DIR}/tfg
+  eula: true
+  memory: 2G
+
+server_pack:
+  github: TerraFirmaGreg-Team/Modpack-Modern
+  tag: 0.11.28
+  asset: "*serverpack*"
