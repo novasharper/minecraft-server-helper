@@ -440,13 +440,17 @@ def _install_extra_mods(config, output_dir: Path, dry_run: bool) -> None:
 
     manifest = Manifest(output_dir)
     manifest.load()
-    mc_version_raw = manifest.mc_version or config.server.minecraft_version
+    if not manifest.mc_version:
+        raise RuntimeError(
+            "Cannot install extra mods: Minecraft version is not recorded in the manifest. "
+            "Re-run setup to reinstall the base pack."
+        )
     loader = manifest.loader_type or (
         config.server.type if config.server.type not in ("vanilla", "paper", "purpur") else None
     )
 
     session = build_session()
-    mc_ver = _resolve_mc_version(session, mc_version_raw)
+    mc_ver = _resolve_mc_version(session, manifest.mc_version)
 
     installed = _download_mods(mods_cfg, mc_ver, loader, output_dir, session)
 

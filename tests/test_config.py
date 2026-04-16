@@ -50,7 +50,7 @@ def _minimal_data(**overrides):
 
 def test_server_defaults():
     cfg = RootConfig.model_validate(_minimal_data())
-    assert cfg.server.minecraft_version == "LATEST"
+    assert cfg.server.minecraft_version is None
     assert cfg.server.loader_version == "LATEST"
     assert cfg.server.eula is False
     assert cfg.server.memory == "1G"

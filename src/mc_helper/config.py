@@ -46,7 +46,7 @@ ServerType = Literal["vanilla", "forge", "neoforge", "fabric", "paper", "purpur"
 
 class ServerConfig(BaseModel):
     type: ServerType
-    minecraft_version: str = "LATEST"
+    minecraft_version: Optional[str] = None
     loader_version: str = "LATEST"
     output_dir: Path = Path("./server")
     eula: bool = False

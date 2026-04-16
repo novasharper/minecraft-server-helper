@@ -28,7 +28,7 @@ server:
 | Field | Type | Default | Description |
 |---|---|---|---|
 | `type` | string | *(required)* | Server type. One of `vanilla`, `fabric`, `forge`, `neoforge`, `paper`, `purpur`. |
-| `minecraft_version` | string | `LATEST` | Minecraft version, e.g. `1.21.1`, `LATEST`, or `SNAPSHOT`. |
+| `minecraft_version` | string | `LATEST` | Minecraft version, e.g. `1.21.1`, `LATEST`, or `SNAPSHOT`. Not used when `modpack` or `server_pack` is set — the version comes from the pack. |
 | `loader_version` | string | `LATEST` | Loader version for `fabric`, `forge`, or `neoforge`. Ignored for `vanilla`, `paper`, `purpur`. |
 | `output_dir` | path | `./server` | Directory where server files are installed. Created if it does not exist. |
 | `eula` | bool | `false` | Set to `true` to agree to the Minecraft EULA. Written to `eula.txt`. |
@@ -166,12 +166,11 @@ Mod downloads from Modrinth and CurseForge run in parallel (up to 10 concurrent 
 
 ### Using `mods` with `modpack` or `server_pack`
 
-When `mods` is combined with `modpack` or `server_pack`, the base pack installs first and then the extra mods are downloaded into `<output_dir>/mods/`. The `mc_version` and loader are taken from the manifest written by the base installer; for `server_pack` (which does not record these), they fall back to `server.minecraft_version` and `server.type`.
+When `mods` is combined with `modpack` or `server_pack`, the base pack installs first and then the extra mods are downloaded into `<output_dir>/mods/`. The Minecraft version and loader are read from the manifest written by the base installer — `server.minecraft_version` is not used.
 
 ```yaml
 server:
   type: fabric
-  minecraft_version: "1.21.1"
   output_dir: ./server
   eula: true
 
