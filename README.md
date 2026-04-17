@@ -7,15 +7,10 @@ A standalone Python CLI (`mc-helper`) that prepares a Minecraft server directory
 - **Seven server types**: Vanilla, Fabric, Forge, NeoForge, Paper, Purpur
 - **Modpacks**: CurseForge, Modrinth, and FTB modpack installation with override extraction
 - **Individual mods**: Modrinth and CurseForge mod resolution by slug, ID, or version; parallel downloads
-- **Server packs**: Pre-assembled ZIP/tar.gz from direct URL or GitHub release asset
+- **Server packs**: Pre-assembled ZIP/tar.gz/tar.bz2 from direct URL or GitHub release asset
 - **Idempotent**: Manifest-tracked state skips unchanged files and removes stale ones on re-run
 - **Config-driven**: One YAML file covers server type, properties, mods, and output location
 - **Dry-run mode**: Preview all actions without downloading or writing anything
-
-## TODO
-
-- Add end-to-end tests (validate config variants actually setting up minecraft server)
-- Think of extra QoL features that could be used to manage a minecraft server (like backups)
 
 ## Installation
 
@@ -168,9 +163,12 @@ modpack:
 ```bash
 poetry install
 
-poetry run pytest                                                   # all tests
+poetry run pytest                                                   # all unit tests
 poetry run pytest tests/test_vanilla.py                             # one file
 poetry run pytest tests/test_curseforge.py::test_resolve_by_slug    # one test
+
+# End-to-end tests (requires podman or docker; makes real network requests)
+bash tests/e2e/run_tests.sh
 
 poetry run ruff check src/ tests/
 poetry run ruff format src/ tests/

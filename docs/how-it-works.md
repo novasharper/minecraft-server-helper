@@ -66,7 +66,7 @@ Archive format is detected from the filename:
 | Extension | Handler |
 |---|---|
 | `.zip` | Python `zipfile` |
-| `.tar.gz`, `.tgz` | Python `tarfile` |
+| `.tar.gz`, `.tgz`, `.tar.bz2` | Python `tarfile` |
 
 ### `strip_components`
 
@@ -74,7 +74,7 @@ When `strip_components: N` is set, the first N path segments of every archive en
 
 ### Content-root detection
 
-After extraction, the tool searches for the shallowest directory that contains one of these markers: `mods/`, `plugins/`, `config/`, or any `*.jar` file. If the content is nested one or more levels deep, the content root is promoted to `output_dir` directly.
+After extraction, the tool searches for the shallowest directory that contains a subdirectory named `mods`, `plugins`, or `config`. If the content is nested one or more levels deep, the content root is promoted to `output_dir` directly.
 
 ### `disable_mods`
 
@@ -112,7 +112,9 @@ Written unconditionally. Reflects `server.eula` from the config.
 
 ### `server.properties`
 
-Each entry in `server.properties` (the config map) produces one line:
+If `properties` is empty, the file is not written at all — any existing `server.properties` in `output_dir` is left untouched.
+
+When `properties` is non-empty and no `server.properties` exists yet, the file is created with one `key=value` line per entry:
 
 ```
 difficulty=normal
@@ -120,7 +122,7 @@ max-players=20
 motd=A Minecraft Server
 ```
 
-The file is omitted entirely if the map is empty, leaving any existing `server.properties` untouched.
+When `server.properties` already exists (e.g. on a re-run or from the server pack), the file is merged in-place: keys that appear in the config map are updated to their new values, keys not in the config map are preserved verbatim (including comments and blank lines), and any config keys not already in the file are appended at the end.
 
 ### `launch.sh`
 

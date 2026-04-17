@@ -17,7 +17,7 @@ poetry install
 ## Common Commands
 
 ```bash
-# Run all tests
+# Run all unit tests (real network blocked by autouse fixture in conftest.py)
 poetry run pytest
 
 # Run a single test file
@@ -26,7 +26,13 @@ poetry run pytest tests/test_vanilla.py
 # Run a single test
 poetry run pytest tests/test_curseforge.py::test_resolve_by_slug
 
-# Lint + format
+# Run e2e tests (requires podman or docker; makes real network calls, ~minutes each)
+bash tests/e2e/run_tests.sh
+# or directly:
+poetry run pytest tests/e2e/test_e2e.py -v
+# set E2E_OUTPUT_DIR=/some/path to preserve downloaded output after tests
+
+# Lint + format (line length: 100)
 poetry run ruff check src/ tests/
 poetry run ruff format src/ tests/
 
@@ -66,9 +72,23 @@ Pydantic v2 models. YAML is loaded → `${VAR}` env interpolation runs on all st
 
 Each module exposes an installer class (`VanillaInstaller`, `FabricInstaller`, `ForgeInstaller`, `NeoForgeInstaller`, `PaperInstaller`, `PurpurInstaller`). The constructor takes version and session params; `install(output_dir)` downloads and installs the server. Vanilla, Fabric, Paper, Purpur return the installed JAR `Path`. Forge and NeoForge run `java -jar <installer>.jar --installServer` as a subprocess and return `None` (the installer creates its own `run.sh`).
 
+### Mod resolution (`mods/`)
+
+`mods/curseforge.py` and `mods/modrinth.py` resolve individual mods (by slug/ID) to a download URL and checksum, then delegate the actual download to `http_client.download_file()`. This package is distinct from `modpack/` — it handles the `mods:` list in config, not full modpack installs.
+
+### Shared utilities (`utils.py`)
+
+`extract_zip_overrides()` — ZIP extraction with path-traversal guard and glob exclusions.  
+`find_content_root()` — mirrors `mc-image-helper find --only-shallowest` to locate the server root inside an extracted archive.  
+`compare_versions()`, `glob_delete()`, `disable_mods()` — version comparison and file management helpers.
+
 ### Parallelism
 
 `_download_mods()` submits all Modrinth and CurseForge mod downloads to a `ThreadPoolExecutor(max_workers=10)`. Errors are collected per-mod; all are reported before exiting non-zero if any failed. This helper is called by both `_setup_mods()` (mods-only path) and `_install_extra_mods()` (overlay path).
+
+### Testing conventions
+
+Unit tests block all real network I/O via an `autouse` fixture in `conftest.py` (patches `socket.create_connection` and `socket.getaddrinfo`). Use `@responses.activate` to mock HTTP calls — tests decorated with it are unaffected by the socket block.
 
 ## Reference Sources
 

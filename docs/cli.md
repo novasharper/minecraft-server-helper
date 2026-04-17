@@ -3,10 +3,10 @@
 `mc-helper` is the command-line entry point for this tool.
 
 ```
-mc-helper --config <FILE> <command> [options]
+mc-helper [--config <FILE>] [-v] <command> [options]
 ```
 
-`--config` is required for every command. It specifies the path to your YAML configuration file.
+`--config` accepts a path to the YAML configuration file and is required for every command. It may appear before or after the subcommand name. `-v` / `--verbose` enables debug-level logging.
 
 ---
 
@@ -85,7 +85,7 @@ After a successful `setup` run, the following files are written into `output_dir
 | File | Contents |
 |---|---|
 | `eula.txt` | `eula=true` or `eula=false` from `server.eula`. |
-| `server.properties` | One `key=value` line per entry in `server.properties`. Omitted if the `properties` map is empty. |
+| `server.properties` | Written or merged from the `properties` map. Omitted (and any existing file left untouched) if the map is empty. When the file already exists, only the configured keys are updated; all other entries are preserved. |
 | `launch.sh` | Executable shell script that launches the server with the configured memory. |
 | `.mc-helper-manifest.json` | Internal state file used for idempotent re-runs. |
 

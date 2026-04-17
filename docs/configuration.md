@@ -27,7 +27,7 @@ server:
 
 | Field | Type | Default | Description |
 |---|---|---|---|
-| `type` | string | *(required)* | Server type. One of `vanilla`, `fabric`, `forge`, `neoforge`, `paper`, `purpur`. |
+| `type` | string | *(required unless `modpack`/`server_pack` is set)* | Server type. One of `vanilla`, `fabric`, `forge`, `neoforge`, `paper`, `purpur`. When `modpack` is used, this field acts as a loader hint for mod-compatibility filtering; the actual loader is read from the pack metadata. |
 | `minecraft_version` | string | `LATEST` | Minecraft version, e.g. `1.21.1`, `LATEST`, or `SNAPSHOT`. Not used when `modpack` or `server_pack` is set — the version comes from the pack. |
 | `loader_version` | string | `LATEST` | Loader version for `fabric`, `forge`, or `neoforge`. Ignored for `vanilla`, `paper`, `purpur`. |
 | `output_dir` | path | `./server` | Directory where server files are installed. Created if it does not exist. |
@@ -192,7 +192,7 @@ On re-run: the modpack installer's stale-file cleanup removes the extra mods (th
 
 ## `server_pack`
 
-Extracts a pre-assembled server archive (ZIP or tar.gz) into `output_dir`. The archive can come from a direct URL or a GitHub release asset.
+Extracts a pre-assembled server archive (ZIP, tar.gz, tgz, or tar.bz2) into `output_dir`. The archive can come from a direct URL or a GitHub release asset.
 
 ```yaml
 server_pack:
@@ -216,7 +216,7 @@ server_pack:
 
 | Field | Type | Description |
 |---|---|---|
-| `url` | string | Direct download URL for a ZIP or tar.gz archive. |
+| `url` | string | Direct download URL for a ZIP, tar.gz, tgz, or tar.bz2 archive. |
 
 ### Source: GitHub release
 
