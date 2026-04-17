@@ -1,49 +1,138 @@
 """End-to-end tests: run mc-helper setup with real downloads and validate outputs.
 
-Each test invokes `mc-helper setup` as a subprocess and checks that the expected
-server files are created.  Tests make real network requests and can take several
-minutes each — they are intentionally not parallelized.
+Each test builds the mc-helper-e2e image once (session fixture), then spawns a
+fresh container per test with src/ bind-mounted.  Tests make real network
+requests and can take several minutes each — they are intentionally not
+parallelized.
 
-Run via the container:
+Run via the helper script (recommended):
     bash tests/e2e/run_tests.sh
 
-Or directly (requires mc-helper on PATH and network access):
-    E2E_OUTPUT_DIR=/tmp/e2e-output pytest tests/e2e/test_e2e.py -v
+Or directly with poetry (requires podman or docker):
+    poetry run pytest tests/e2e/test_e2e.py -v
+    E2E_OUTPUT_DIR=/tmp/e2e-output poetry run pytest tests/e2e/test_e2e.py -v  # keep output
 """
 
 import os
+import shutil
 import subprocess
 import sys  # for stderr output only
+import tempfile
 from pathlib import Path
 
 import pytest
 
-CONFIGS_DIR = Path(__file__).parent / "configs"
-E2E_OUTPUT_BASE = Path(os.environ.get("E2E_OUTPUT_DIR", "/tmp/e2e-output"))
+E2E_DIR = Path(__file__).parent
+REPO_ROOT = E2E_DIR.parent.parent  # minecraft-server-helper/
+SRC_DIR = REPO_ROOT / "src"
+CONFIGS_DIR = E2E_DIR / "configs"
+IMAGE = "mc-helper-e2e"
 
 # 20 minutes — modpack downloads can be large
 TIMEOUT = 1200
 
 
-def _run(config_name: str, extra_env: dict | None = None) -> subprocess.CompletedProcess:
-    """Run `mc-helper setup --config <config_name>` and return the result."""
-    env = os.environ.copy()
-    env.setdefault("E2E_OUTPUT_DIR", str(E2E_OUTPUT_BASE))
-    if extra_env:
-        env.update(extra_env)
+# ── Fixtures ──────────────────────────────────────────────────────────────────
 
-    config_path = CONFIGS_DIR / config_name
-    result = subprocess.run(
-        ["mc-helper", "setup", "--config", str(config_path)],
-        env=env,
-        capture_output=True,
-        text=True,
-        timeout=TIMEOUT,
+
+@pytest.fixture(scope="session")
+def container_runtime():
+    """Detect and return the available container runtime (podman or docker)."""
+    override = os.environ.get("CONTAINER_RUNTIME", "")
+    if override:
+        return override
+    for rt in ("podman", "docker"):
+        if shutil.which(rt):
+            return rt
+    pytest.skip("neither podman nor docker found on PATH")
+
+
+@pytest.fixture(scope="session")
+def e2e_image(container_runtime):
+    """Build the mc-helper-e2e image once for the entire test session."""
+    subprocess.run(
+        [
+            container_runtime,
+            "build",
+            "-t",
+            IMAGE,
+            "-f",
+            str(E2E_DIR / "Containerfile"),
+            str(E2E_DIR),
+        ],
+        check=True,
     )
-    if result.returncode != 0:
-        # Print output to make pytest failures readable
-        print("STDOUT:\n", result.stdout)
-        print("STDERR:\n", result.stderr, file=sys.stderr)
+    return IMAGE
+
+
+@pytest.fixture(scope="session")
+def output_base():
+    """Return the base directory for server output.
+
+    Uses E2E_OUTPUT_DIR if set; otherwise creates a temporary directory that is
+    automatically removed at the end of the session.
+    """
+    explicit = os.environ.get("E2E_OUTPUT_DIR", "")
+    if explicit:
+        p = Path(explicit)
+        p.mkdir(parents=True, exist_ok=True)
+        yield p
+    else:
+        with tempfile.TemporaryDirectory(prefix="mc-helper-e2e-") as tmp:
+            yield Path(tmp)
+
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+
+def _run(
+    container_runtime: str,
+    e2e_image: str,
+    output_base: Path,
+    config_name: str,
+    extra_env: dict | None = None,
+) -> subprocess.CompletedProcess:
+    """Run `mc-helper setup --config <config_name>` in a fresh container."""
+    # VirtioFS (Podman/macOS) presents bind-mounts as root:nobody regardless of
+    # the host uid.  Making the directory world-writable on the host is the
+    # only reliable way to let the container user create subdirectories inside.
+    output_base.chmod(0o777)
+
+    env_flags = ["-e", "E2E_OUTPUT_DIR=/output"]
+    cf_key = os.environ.get("CF_API_KEY", "")
+    if cf_key:
+        env_flags += ["-e", f"CF_API_KEY={cf_key}"]
+    if extra_env:
+        for k, v in extra_env.items():
+            env_flags += ["-e", f"{k}={v}"]
+
+    cmd = [
+        container_runtime,
+        "run",
+        "--rm",
+        "-v",
+        f"{SRC_DIR}:/app/src:ro",
+        "-v",
+        f"{CONFIGS_DIR}:/configs:ro",
+        "-v",
+        f"{output_base}:/output",
+        *env_flags,
+        e2e_image,
+        "mc-helper",
+        "setup",
+        "--config",
+        f"/configs/{config_name}",
+    ]
+
+    live = os.environ.get("E2E_LIVE_OUTPUT", "").lower() in ("1", "true", "yes")
+    if live:
+        # Stream output directly to the terminal as the container runs.
+        result = subprocess.run(cmd, timeout=TIMEOUT)
+    else:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=TIMEOUT)
+        if result.returncode != 0:
+            print("STDOUT:\n", result.stdout)
+            print("STDERR:\n", result.stderr, file=sys.stderr)
     return result
 
 
@@ -65,60 +154,6 @@ def _assert_mods_populated(output_dir: Path) -> None:
     assert jars, f"no .jar files found in {mods_dir}"
 
 
-# ── Server pack tests ─────────────────────────────────────────────────────────
-
-
-def test_modpack_serverpack_gtnh():
-    """GT: New Horizons 2.8.4 installed from a direct-URL server pack."""
-    result = _run("server-pack-gtnh.yaml")
-    assert result.returncode == 0, "mc-helper exited non-zero"
-    _assert_basic_files(E2E_OUTPUT_BASE / "gtnh")
-
-
-def test_modpack_serverpack_tfg():
-    """TerraFirmaGreg Modern v0.11.28 installed from a GitHub release asset."""
-    result = _run("server-pack-tfg.yaml")
-    assert result.returncode == 0, "mc-helper exited non-zero"
-    _assert_basic_files(E2E_OUTPUT_BASE / "tfg")
-
-
-# ── Modpack tests ─────────────────────────────────────────────────────────────
-
-
-def test_modpack_ftb_stoneblock4():
-    """FTB StoneBlock 4 installed via the FTB platform API."""
-    result = _run("modpack-ftb-sb4.yaml")
-    assert result.returncode == 0, "mc-helper exited non-zero"
-    output_dir = E2E_OUTPUT_BASE / "ftb-sb4"
-    _assert_basic_files(output_dir)
-    _assert_mods_populated(output_dir)
-
-
-def test_modpack_cobblemon():
-    """Cobblemon (Fabric) installed from Modrinth."""
-    result = _run("modpack-cobblemon.yaml")
-    assert result.returncode == 0, "mc-helper exited non-zero"
-    output_dir = E2E_OUTPUT_BASE / "cobblemon"
-    _assert_basic_files(output_dir)
-    _assert_mods_populated(output_dir)
-
-
-@pytest.mark.skipif(
-    not os.environ.get("CF_API_KEY"),
-    reason="CF_API_KEY not set — skipping CurseForge test",
-)
-def test_modpack_all_of_create():
-    """All of Create installed from CurseForge (requires CF_API_KEY)."""
-    result = _run("modpack-aoc.yaml")
-    assert result.returncode == 0, "mc-helper exited non-zero"
-    output_dir = E2E_OUTPUT_BASE / "aoc"
-    _assert_basic_files(output_dir)
-    _assert_mods_populated(output_dir)
-
-
-# ── Pure server type tests ────────────────────────────────────────────────────
-
-
 def _assert_server_artifact(output_dir: Path, pattern: str) -> None:
     """Assert that the server-type-specific file or glob pattern exists."""
     if "*" in pattern:
@@ -130,55 +165,109 @@ def _assert_server_artifact(output_dir: Path, pattern: str) -> None:
         )
 
 
-def test_server_vanilla():
-    """Vanilla 1.21.4 server JAR installed."""
-    result = _run("server-vanilla.yaml")
+# ── Server pack tests ─────────────────────────────────────────────────────────
+
+
+def test_modpack_serverpack_gtnh(container_runtime, e2e_image, output_base):
+    """GT: New Horizons 2.8.4 installed from a direct-URL server pack."""
+    result = _run(container_runtime, e2e_image, output_base, "serverpack-gtnh.yaml")
     assert result.returncode == 0, "mc-helper exited non-zero"
-    output_dir = E2E_OUTPUT_BASE / "vanilla"
+    _assert_basic_files(output_base / "gtnh")
+
+
+def test_modpack_serverpack_tfg(container_runtime, e2e_image, output_base):
+    """TerraFirmaGreg Modern v0.11.28 installed from a GitHub release asset."""
+    result = _run(container_runtime, e2e_image, output_base, "serverpack-tfg.yaml")
+    assert result.returncode == 0, "mc-helper exited non-zero"
+    _assert_basic_files(output_base / "tfg")
+
+
+# ── Modpack tests ─────────────────────────────────────────────────────────────
+
+
+def test_modpack_ftb_stoneblock4(container_runtime, e2e_image, output_base):
+    """FTB StoneBlock 4 installed via the FTB platform API."""
+    result = _run(container_runtime, e2e_image, output_base, "modpack-ftb-sb4.yaml")
+    assert result.returncode == 0, "mc-helper exited non-zero"
+    output_dir = output_base / "ftb-sb4"
+    _assert_basic_files(output_dir)
+    _assert_mods_populated(output_dir)
+
+
+def test_modpack_cobblemon(container_runtime, e2e_image, output_base):
+    """Cobblemon (Fabric) installed from Modrinth."""
+    result = _run(container_runtime, e2e_image, output_base, "modpack-cobblemon.yaml")
+    assert result.returncode == 0, "mc-helper exited non-zero"
+    output_dir = output_base / "cobblemon"
+    _assert_basic_files(output_dir)
+    _assert_mods_populated(output_dir)
+
+
+@pytest.mark.skipif(
+    not os.environ.get("CF_API_KEY"),
+    reason="CF_API_KEY not set — skipping CurseForge test",
+)
+def test_modpack_all_of_create(container_runtime, e2e_image, output_base):
+    """All of Create installed from CurseForge (requires CF_API_KEY)."""
+    result = _run(container_runtime, e2e_image, output_base, "modpack-aoc.yaml")
+    assert result.returncode == 0, "mc-helper exited non-zero"
+    output_dir = output_base / "aoc"
+    _assert_basic_files(output_dir)
+    _assert_mods_populated(output_dir)
+
+
+# ── Pure server type tests ────────────────────────────────────────────────────
+
+
+def test_server_vanilla(container_runtime, e2e_image, output_base):
+    """Vanilla 1.21.4 server JAR installed."""
+    result = _run(container_runtime, e2e_image, output_base, "server-vanilla.yaml")
+    assert result.returncode == 0, "mc-helper exited non-zero"
+    output_dir = output_base / "vanilla"
     _assert_basic_files(output_dir)
     _assert_server_artifact(output_dir, "minecraft_server.*.jar")
 
 
-def test_server_fabric():
+def test_server_fabric(container_runtime, e2e_image, output_base):
     """Fabric 1.21.4 server launcher JAR installed."""
-    result = _run("server-fabric.yaml")
+    result = _run(container_runtime, e2e_image, output_base, "server-fabric.yaml")
     assert result.returncode == 0, "mc-helper exited non-zero"
-    output_dir = E2E_OUTPUT_BASE / "fabric"
+    output_dir = output_base / "fabric"
     _assert_basic_files(output_dir)
     _assert_server_artifact(output_dir, "fabric-server-launch.jar")
 
 
-def test_server_forge():
+def test_server_forge(container_runtime, e2e_image, output_base):
     """Forge 1.21.1 server installed via --installServer (creates run.sh)."""
-    result = _run("server-forge.yaml")
+    result = _run(container_runtime, e2e_image, output_base, "server-forge.yaml")
     assert result.returncode == 0, "mc-helper exited non-zero"
-    output_dir = E2E_OUTPUT_BASE / "forge"
+    output_dir = output_base / "forge"
     _assert_basic_files(output_dir)
     _assert_server_artifact(output_dir, "run.sh")
 
 
-def test_server_neoforge():
+def test_server_neoforge(container_runtime, e2e_image, output_base):
     """NeoForge 1.21.4 server installed via --installServer (creates run.sh)."""
-    result = _run("server-neoforge.yaml")
+    result = _run(container_runtime, e2e_image, output_base, "server-neoforge.yaml")
     assert result.returncode == 0, "mc-helper exited non-zero"
-    output_dir = E2E_OUTPUT_BASE / "neoforge"
+    output_dir = output_base / "neoforge"
     _assert_basic_files(output_dir)
     _assert_server_artifact(output_dir, "run.sh")
 
 
-def test_server_paper():
+def test_server_paper(container_runtime, e2e_image, output_base):
     """Paper 1.21.4 server JAR installed."""
-    result = _run("server-paper.yaml")
+    result = _run(container_runtime, e2e_image, output_base, "server-paper.yaml")
     assert result.returncode == 0, "mc-helper exited non-zero"
-    output_dir = E2E_OUTPUT_BASE / "paper"
+    output_dir = output_base / "paper"
     _assert_basic_files(output_dir)
     _assert_server_artifact(output_dir, "paper-*.jar")
 
 
-def test_server_purpur():
+def test_server_purpur(container_runtime, e2e_image, output_base):
     """Purpur 1.21.4 server JAR installed."""
-    result = _run("server-purpur.yaml")
+    result = _run(container_runtime, e2e_image, output_base, "server-purpur.yaml")
     assert result.returncode == 0, "mc-helper exited non-zero"
-    output_dir = E2E_OUTPUT_BASE / "purpur"
+    output_dir = output_base / "purpur"
     _assert_basic_files(output_dir)
     _assert_server_artifact(output_dir, "purpur-*.jar")

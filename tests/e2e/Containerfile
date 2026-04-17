@@ -1,31 +1,16 @@
 FROM fedora:43
 
 RUN dnf install -y \
-    python3-pydantic \
-    python3-pyyaml \
-    python3-requests \
-    python3-tqdm \
-    python3-pytest \
-    python3-pip \
-    java-21-openjdk-headless \
-    && dnf clean all
+        python3-pydantic \
+        python3-pyyaml \
+        python3-requests \
+        python3-tqdm \
+        java-21-openjdk-headless \
+ && dnf clean all \
+ && useradd --create-home mchelper
 
-RUN useradd --create-home --uid 1000 mchelper
-
-WORKDIR /app
-COPY pyproject.toml ./
-COPY src/ ./src/
-COPY tests/e2e/ ./tests/e2e/
-RUN chown -R mchelper:mchelper /app
+COPY cli-shim.py /usr/local/bin/mc-helper
+RUN chmod +x /usr/local/bin/mc-helper
 
 USER mchelper
-
-# Install the mc-helper entry point without reinstalling RPM-managed deps.
-# --user puts the script under ~/.local/bin, which is on PATH for login shells
-# but not always for non-login ones — set it explicitly.
-RUN pip3 install --no-deps --user -e . \
- && mkdir -p /tmp/e2e-output
-ENV PATH="/home/mchelper/.local/bin:${PATH}"
-ENV E2E_OUTPUT_DIR=/tmp/e2e-output
-
-CMD ["pytest", "tests/e2e/test_e2e.py", "-v", "--tb=short"]
+WORKDIR /app
