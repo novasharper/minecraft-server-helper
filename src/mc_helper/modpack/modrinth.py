@@ -19,6 +19,7 @@ Workflow:
 
 import fnmatch
 import json
+import logging
 import zipfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
@@ -28,6 +29,8 @@ import requests
 from mc_helper.http_client import build_session, download_file, get_json
 from mc_helper.manifest import Manifest
 from mc_helper.utils import extract_zip_overrides
+
+log = logging.getLogger(__name__)
 
 _API_BASE = "https://api.modrinth.com/v2"
 _MAX_WORKERS = 10
@@ -198,7 +201,12 @@ class ModrinthPackInstaller:
             self.version_type,
             self.requested_version,
         )
+        log.info(
+            "Resolved Modrinth version: %s (%s)",
+            version.get("version_number"), version.get("id"),
+        )
         mrpack_url = _mrpack_url(version)
+        log.debug("Downloading .mrpack: %s", mrpack_url)
 
         # 2. Download .mrpack to a temp file
         tmp_mrpack = output_dir / ".mc-helper-mrpack.tmp"
@@ -260,6 +268,11 @@ class ModrinthPackInstaller:
                         file_slug_map.get(i),
                     )
                 ]
+                skipped = len(all_files) - len(files_to_install)
+                log.info(
+                    "Downloading %d modpack file(s) (%d skipped as client-only/excluded)...",
+                    len(files_to_install), skipped,
+                )
                 new_files: list[str] = []
                 session = self.session
 
@@ -289,6 +302,7 @@ class ModrinthPackInstaller:
                 override_files = extract_zip_overrides(
                     zf, output_dir, ["overrides", "server-overrides"], self.overrides_exclusions
                 )
+                log.info("Extracted %d override file(s)", len(override_files))
                 new_files.extend(override_files)
 
             # 8. Cleanup stale + save manifest

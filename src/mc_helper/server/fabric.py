@@ -5,11 +5,14 @@ Reference: mc-image-helper/.../fabric/FabricLauncherInstaller.java
 API base: https://meta.fabricmc.net
 """
 
+import logging
 from pathlib import Path
 
 import requests
 
 from mc_helper.http_client import build_session, download_file, get_json
+
+log = logging.getLogger(__name__)
 
 _META_BASE = "https://meta.fabricmc.net"
 
@@ -62,6 +65,7 @@ class FabricInstaller:
         """
         resolved_loader = self._resolve_loader_version()
         resolved_installer = self._resolve_installer_version()
+        log.info("Resolved Fabric loader %s, installer %s", resolved_loader, resolved_installer)
 
         url = (
             f"{_META_BASE}/v2/versions/loader"
@@ -69,5 +73,6 @@ class FabricInstaller:
         )
 
         dest = output_dir / "fabric-server-launch.jar"
+        log.debug("Downloading Fabric server JAR: %s", url)
         download_file(url, dest, session=self.session, show_progress=self.show_progress)
         return dest

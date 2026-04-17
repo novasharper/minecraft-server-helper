@@ -18,6 +18,7 @@ Workflow:
 
 import fnmatch
 import json
+import logging
 import zipfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
@@ -27,6 +28,8 @@ import requests
 from mc_helper.http_client import build_session, download_file, get_json
 from mc_helper.manifest import Manifest
 from mc_helper.utils import extract_zip_overrides
+
+log = logging.getLogger(__name__)
 
 _API_BASE = "https://api.curseforge.com"
 _MINECRAFT_GAME_ID = "432"
@@ -235,9 +238,12 @@ class CurseForgePackInstaller:
                 raise ValueError("Either slug or mod_id must be provided")
             mod_obj = self._search_modpack(self.slug)
             mod_id = mod_obj["id"]
+            log.info("Resolved CurseForge modpack '%s' → mod_id=%d", self.slug, mod_id)
 
         pack_file = self._get_modpack_file(mod_id, self.file_id, self.filename_matcher)
+        log.info("Using modpack file: %s (id=%d)", pack_file.get("fileName"), pack_file.get("id"))
         pack_url = _download_url_for_file(pack_file)
+        log.debug("Downloading modpack ZIP: %s", pack_url)
 
         # 2. Download ZIP
         tmp_zip = output_dir / ".mc-helper-curseforge.tmp.zip"
@@ -275,6 +281,10 @@ class CurseForgePackInstaller:
                 project_ids = [ref["projectID"] for ref in filtered_refs]
                 slug_map = self._resolve_mod_slugs(project_ids)
 
+                log.info(
+                    "Downloading %d mod file(s) (%d skipped as optional/excluded)...",
+                    len(filtered_refs), len(file_refs) - len(filtered_refs),
+                )
                 # 3. Download each mod file in parallel
                 new_files: list[str] = []
                 session = self.session
@@ -317,6 +327,7 @@ class CurseForgePackInstaller:
                 override_files = extract_zip_overrides(
                     zf, output_dir, [overrides_dir], self.overrides_exclusions
                 )
+                log.info("Extracted %d override file(s)", len(override_files))
                 new_files.extend(override_files)
 
             # 5. Cleanup stale + save manifest

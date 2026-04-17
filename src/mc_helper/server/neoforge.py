@@ -15,6 +15,7 @@ Workflow:
   4. Run `java -jar neoforge-installer.jar --installServer` in output_dir
 """
 
+import logging
 import subprocess
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -22,6 +23,8 @@ from pathlib import Path
 import requests
 
 from mc_helper.http_client import build_session, download_file
+
+log = logging.getLogger(__name__)
 
 _MAVEN_BASE = "https://maven.neoforged.net/releases"
 _GROUP_PATH = "net/neoforged"
@@ -100,11 +103,14 @@ class NeoForgeInstaller:
     def install(self, output_dir: Path) -> None:
         """Download and run the NeoForge installer in *output_dir*."""
         resolved = self._resolve_neoforge_version()
+        log.info("Resolved NeoForge version: %s", resolved)
         url = _installer_url(self.minecraft_version, resolved)
 
         installer_jar = output_dir / f"neoforge-{resolved}-installer.jar"
+        log.debug("Downloading NeoForge installer: %s", url)
         download_file(url, installer_jar, session=self.session, show_progress=self.show_progress)
 
+        log.info("Running NeoForge installer (this may take a while)...")
         try:
             subprocess.run(
                 ["java", "-jar", str(installer_jar), "--installServer"],

@@ -4,11 +4,14 @@ Reference: docker-minecraft-server/scripts/start-deployVanilla
 API: https://launchermeta.mojang.com/mc/game/version_manifest.json
 """
 
+import logging
 from pathlib import Path
 
 import requests
 
 from mc_helper.http_client import build_session, download_file
+
+log = logging.getLogger(__name__)
 
 _VERSION_MANIFEST_URL = "https://launchermeta.mojang.com/mc/game/version_manifest.json"
 
@@ -55,6 +58,7 @@ class VanillaInstaller:
         Returns the path to the downloaded JAR.
         """
         version = self.resolve_version()
+        log.info("Resolved Minecraft version: %s", version)
 
         # Find the version-specific manifest URL
         manifest = self._get_manifest()
@@ -75,6 +79,7 @@ class VanillaInstaller:
         sha1 = server_info.get("sha1")
 
         dest = output_dir / f"minecraft_server.{version}.jar"
+        log.debug("Downloading vanilla server JAR: %s", url)
         download_file(
             url, dest, session=self.session, expected_sha1=sha1, show_progress=self.show_progress
         )

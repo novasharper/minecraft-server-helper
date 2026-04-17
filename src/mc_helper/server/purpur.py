@@ -8,11 +8,14 @@ Endpoints used:
   GET /v2/purpur/{version}/{build}/download  → JAR binary
 """
 
+import logging
 from pathlib import Path
 
 import requests
 
 from mc_helper.http_client import build_session, download_file, get_json
+
+log = logging.getLogger(__name__)
 
 _API_BASE = "https://api.purpurmc.org"
 
@@ -46,8 +49,10 @@ class PurpurInstaller:
         Returns the path to the downloaded JAR.
         """
         resolved_build = self._resolve_build() if self.build.upper() == "LATEST" else self.build
+        log.info("Resolved Purpur build: %s", resolved_build)
 
         url = f"{_API_BASE}/v2/purpur/{self.minecraft_version}/{resolved_build}/download"
+        log.debug("Downloading Purpur JAR: %s", url)
         dest = output_dir / f"purpur-{self.minecraft_version}-{resolved_build}.jar"
         download_file(url, dest, session=self.session, show_progress=self.show_progress)
         return dest

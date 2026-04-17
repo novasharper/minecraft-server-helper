@@ -1,7 +1,10 @@
 import argparse
+import logging
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
+
+log = logging.getLogger(__name__)
 
 from mc_helper.config import load_config
 from mc_helper.http_client import build_session, download_file
@@ -59,7 +62,19 @@ def main() -> None:
         "status", parents=[_config_parent], help="Show installed server state from the manifest."
     )
 
+    parser.add_argument(
+        "-v", "--verbose",
+        action="store_true",
+        help="Enable debug-level logging.",
+    )
+
     args = parser.parse_args()
+
+    logging.basicConfig(
+        level=logging.DEBUG if args.verbose else logging.INFO,
+        format="[mc-helper] %(message)s",
+        stream=sys.stderr,
+    )
 
     if not args.config:
         parser.error("argument --config is required")
@@ -76,24 +91,24 @@ def _cmd_validate(args: argparse.Namespace) -> None:
     try:
         config = load_config(args.config)
     except Exception as exc:
-        print(f"Invalid config: {exc}", file=sys.stderr)
+        log.error("Invalid config: %s", exc)
         sys.exit(1)
 
-    print(f"OK — server type={config.server.type}, mc={config.server.minecraft_version}")
+    log.info("OK — server type=%s, mc=%s", config.server.type, config.server.minecraft_version)
 
 
 def _cmd_setup(args: argparse.Namespace) -> None:
     try:
         config = load_config(args.config)
     except Exception as exc:
-        print(f"Invalid config: {exc}", file=sys.stderr)
+        log.error("Invalid config: %s", exc)
         sys.exit(1)
 
     output_dir = Path(args.output_dir) if args.output_dir else config.server.output_dir
     dry_run: bool = args.dry_run
 
     if dry_run:
-        print("[dry-run] No files will be downloaded or written.")
+        log.info("[dry-run] No files will be downloaded or written.")
 
     if config.server_pack:
         _setup_server_pack(config, output_dir, dry_run)
@@ -107,7 +122,7 @@ def _cmd_setup(args: argparse.Namespace) -> None:
         jar_path = _install_server_jar(config, output_dir, dry_run)
         _write_server_files(config, output_dir, jar_path, dry_run)
         if not dry_run:
-            print(f"Server installed to {output_dir}")
+            log.info("Server installed to %s", output_dir)
         return
 
     # Extra mods layered on top of server_pack or modpack
@@ -134,15 +149,16 @@ def _install_server_jar(config, output_dir: Path, dry_run: bool) -> Path | None:
         raise ValueError("server.type must be set for this installation mode")
 
     if dry_run:
-        print(
-            f"[dry-run] Would install {server.type} {server.minecraft_version} "
-            f"server to {output_dir}"
+        log.info(
+            "[dry-run] Would install %s %s server to %s",
+            server.type, server.minecraft_version, output_dir,
         )
         return None
 
     output_dir.mkdir(parents=True, exist_ok=True)
     session = build_session()
     mc_version = _resolve_mc_version(session, server.minecraft_version)
+    log.info("Installing %s %s server...", server.type, mc_version)
 
     if server.type == "vanilla":
         jar_path = vanilla.VanillaInstaller(mc_version, session=session).install(output_dir)
@@ -196,6 +212,7 @@ def _write_server_files(
     config, output_dir: Path, jar_path: Path | None, dry_run: bool, effective_type: str | None = None
 ) -> None:
     """Write eula.txt, server.properties, and launch.sh into output_dir."""
+    log.info("Writing server files to %s...", output_dir)
     server = config.server
 
     # eula.txt
@@ -271,10 +288,11 @@ def _write_server_files(
 
 def _setup_server_pack(config, output_dir: Path, dry_run: bool) -> None:
     if dry_run:
-        print(f"[dry-run] Would install server pack to {output_dir}")
+        log.info("[dry-run] Would install server pack to %s", output_dir)
         _write_server_files(config, output_dir, None, dry_run)
         return
 
+    log.info("Installing server pack to %s...", output_dir)
     sp = config.server_pack
     server_pack.ServerPackInstaller(
         url=sp.url,
@@ -287,17 +305,18 @@ def _setup_server_pack(config, output_dir: Path, dry_run: bool) -> None:
         force_update=sp.force_update,
     ).install(output_dir)
     _write_server_files(config, output_dir, None, dry_run)
-    print(f"Server pack installed to {output_dir}")
+    log.info("Server pack installed to %s", output_dir)
 
 
 def _setup_modpack(config, output_dir: Path, dry_run: bool) -> None:
     mp = config.modpack
 
     if dry_run:
-        print(f"[dry-run] Would install {mp.platform} modpack to {output_dir}")
+        log.info("[dry-run] Would install %s modpack to %s", mp.platform, output_dir)
         _write_server_files(config, output_dir, None, dry_run)
         return
 
+    log.info("Installing %s modpack to %s...", mp.platform, output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     loader = (
         config.server.type
@@ -350,6 +369,7 @@ def _setup_modpack(config, output_dir: Path, dry_run: bool) -> None:
     mc_version = manifest.mc_version
     loader_version = manifest.loader_version
 
+    log.info("Installing %s %s server JAR...", loader_type or "vanilla", mc_version)
     if loader_type == "fabric":
         jar_path = fabric.FabricInstaller(
             mc_version, loader_version=loader_version, session=session
@@ -374,7 +394,7 @@ def _setup_modpack(config, output_dir: Path, dry_run: bool) -> None:
         raise ValueError(f"Unknown loader type from modpack manifest: {loader_type!r}")
 
     _write_server_files(config, output_dir, jar_path, dry_run, effective_type=loader_type)
-    print(f"Modpack installed to {output_dir}")
+    log.info("Modpack installed to %s", output_dir)
 
 
 def _download_mods(
@@ -419,20 +439,20 @@ def _download_mods(
             try:
                 path = fut.result()
                 installed.append(path)
-                print(f"  installed {spec} → {path}")
+                log.info("  installed %s → %s", spec, path)
             except Exception as exc:
                 errors.append(f"{spec}: {exc}")
-                print(f"  ERROR {spec}: {exc}", file=sys.stderr)
+                log.error("  ERROR %s: %s", spec, exc)
 
     for spec in mods_cfg.urls or []:
         filename = spec.split("/")[-1].split("?")[0]
         dest = output_dir / "mods" / filename
         download_file(spec, dest, session=session, show_progress=True)
         installed.append(str(Path("mods") / filename))
-        print(f"  installed {spec} → mods/{filename}")
+        log.info("  installed %s → mods/%s", spec, filename)
 
     if errors:
-        print(f"\n{len(errors)} mod(s) failed to install.", file=sys.stderr)
+        log.error("%d mod(s) failed to install.", len(errors))
         sys.exit(1)
 
     return installed
@@ -444,9 +464,9 @@ def _setup_mods(config, output_dir: Path, dry_run: bool) -> None:
         mr_count = len(mods_cfg.modrinth or [])
         cf_count = len(mods_cfg.curseforge.files) if mods_cfg.curseforge else 0
         url_count = len(mods_cfg.urls or [])
-        print(
-            f"[dry-run] Would install {mr_count} Modrinth + {cf_count} CurseForge "
-            f"+ {url_count} URL mod(s) to {output_dir}/mods/"
+        log.info(
+            "[dry-run] Would install %d Modrinth + %d CurseForge + %d URL mod(s) to %s/mods/",
+            mr_count, cf_count, url_count, output_dir,
         )
         jar_path = _install_server_jar(config, output_dir, dry_run)
         _write_server_files(config, output_dir, jar_path, dry_run)
@@ -460,9 +480,14 @@ def _setup_mods(config, output_dir: Path, dry_run: bool) -> None:
     session = build_session()
     mc_ver = _resolve_mc_version(session, config.server.minecraft_version)
 
+    total = (
+        len(mods_cfg.modrinth or [])
+        + (len(mods_cfg.curseforge.files) if mods_cfg.curseforge else 0)
+        + len(mods_cfg.urls or [])
+    )
+    log.info("Downloading %d mod(s) to %s/mods/...", total, output_dir)
     installed = _download_mods(mods_cfg, mc_ver, loader, output_dir, session)
-
-    print(f"\n{len(installed)} mod(s) installed to {output_dir}/mods/")
+    log.info("%d mod(s) installed to %s/mods/", len(installed), output_dir)
 
     # Install server JAR and write config files
     jar_path = _install_server_jar(config, output_dir, dry_run)
@@ -476,9 +501,9 @@ def _install_extra_mods(config, output_dir: Path, dry_run: bool) -> None:
         mr_count = len(mods_cfg.modrinth or [])
         cf_count = len(mods_cfg.curseforge.files) if mods_cfg.curseforge else 0
         url_count = len(mods_cfg.urls or [])
-        print(
-            f"[dry-run] Would install {mr_count} Modrinth + {cf_count} CurseForge "
-            f"+ {url_count} extra mod(s) to {output_dir}/mods/"
+        log.info(
+            "[dry-run] Would install %d Modrinth + %d CurseForge + %d extra mod(s) to %s/mods/",
+            mr_count, cf_count, url_count, output_dir,
         )
         return
 
@@ -498,20 +523,26 @@ def _install_extra_mods(config, output_dir: Path, dry_run: bool) -> None:
     session = build_session()
     mc_ver = _resolve_mc_version(session, manifest.mc_version)
 
+    total = (
+        len(mods_cfg.modrinth or [])
+        + (len(mods_cfg.curseforge.files) if mods_cfg.curseforge else 0)
+        + len(mods_cfg.urls or [])
+    )
+    log.info("Downloading %d extra mod(s) to %s/mods/...", total, output_dir)
     installed = _download_mods(mods_cfg, mc_ver, loader, output_dir, session)
 
     # Append extra mod paths to manifest; base installer already saved its files
     manifest.files = sorted(set(manifest.files) | set(installed))
     manifest.save()
 
-    print(f"\n{len(installed)} extra mod(s) installed to {output_dir}/mods/")
+    log.info("%d extra mod(s) installed to %s/mods/", len(installed), output_dir)
 
 
 def _cmd_status(args: argparse.Namespace) -> None:
     try:
         config = load_config(args.config)
     except Exception as exc:
-        print(f"Invalid config: {exc}", file=sys.stderr)
+        log.error("Invalid config: %s", exc)
         sys.exit(1)
 
     output_dir = config.server.output_dir
@@ -519,20 +550,20 @@ def _cmd_status(args: argparse.Namespace) -> None:
     manifest.load()
 
     if not manifest._data:
-        print(f"No manifest found in {output_dir} — server has not been set up yet.")
+        log.info("No manifest found in %s — server has not been set up yet.", output_dir)
         return
 
-    print(f"Manifest: {manifest.path}")
+    log.info("Manifest: %s", manifest.path)
     if manifest.mc_version:
-        print(f"  Minecraft version : {manifest.mc_version}")
+        log.info("  Minecraft version : %s", manifest.mc_version)
     if manifest.loader_type:
-        print(f"  Loader            : {manifest.loader_type}")
+        log.info("  Loader            : %s", manifest.loader_type)
     if manifest.loader_version:
-        print(f"  Loader version    : {manifest.loader_version}")
+        log.info("  Loader version    : %s", manifest.loader_version)
     if manifest.pack_sha1:
-        print(f"  Pack SHA-1        : {manifest.pack_sha1}")
+        log.info("  Pack SHA-1        : %s", manifest.pack_sha1)
     files = manifest.files
     if files:
-        print(f"  Tracked files     : {len(files)}")
+        log.info("  Tracked files     : %d", len(files))
         for f in files:
-            print(f"    {f}")
+            log.info("    %s", f)

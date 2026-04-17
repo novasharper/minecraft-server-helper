@@ -9,11 +9,14 @@ Endpoint used:
   Response: { id, channel, downloads: { "server:default": { name, url, checksums: { sha256 } } } }
 """
 
+import logging
 from pathlib import Path
 
 import requests
 
 from mc_helper.http_client import build_session, download_file, get_json
+
+log = logging.getLogger(__name__)
 
 _API_BASE = "https://fill.papermc.io"
 
@@ -57,6 +60,8 @@ class PaperInstaller:
         url = download_info["url"]
         name = download_info["name"]
         sha256 = download_info.get("checksums", {}).get("sha256")
+        log.info("Resolved %s build: %s", self.project, build.get("id", "?"))
+        log.debug("Downloading %s JAR: %s", self.project, url)
 
         dest = output_dir / name
         download_file(

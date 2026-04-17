@@ -14,6 +14,7 @@ Workflow:
 """
 
 import fnmatch
+import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
@@ -21,6 +22,8 @@ import requests
 
 from mc_helper.http_client import build_session, download_file
 from mc_helper.manifest import Manifest
+
+log = logging.getLogger(__name__)
 
 _API_BASE = "https://api.feed-the-beast.com/v1/modpacks"
 _MAX_WORKERS = 10
@@ -116,6 +119,7 @@ class FTBPackInstaller:
 
         # 1+2. Resolve version ID
         version_id = self._resolve_version_id()
+        log.info("Resolved FTB pack %d version_id: %d", self.pack_id, version_id)
 
         # 3. Fetch version detail
         detail = _ftb_get(
@@ -134,9 +138,12 @@ class FTBPackInstaller:
                 loader_version = target.get("version")
 
         # 5. Filter files
-        files_to_download = [
-            f for f in detail.get("files", []) if _should_include(f, self.exclude_mods)
-        ]
+        all_files = detail.get("files", [])
+        files_to_download = [f for f in all_files if _should_include(f, self.exclude_mods)]
+        log.info(
+            "Downloading %d file(s) (%d skipped as client-only/excluded)...",
+            len(files_to_download), len(all_files) - len(files_to_download),
+        )
 
         # 6. Download files in parallel (individual progress bars suppressed; too noisy)
         new_files: list[str] = []

@@ -10,12 +10,15 @@ Workflow:
   3. Run `java -jar forge-installer.jar --installServer` in output_dir
 """
 
+import logging
 import subprocess
 from pathlib import Path
 
 import requests
 
 from mc_helper.http_client import build_session, download_file
+
+log = logging.getLogger(__name__)
 
 _PROMOTIONS_URL = "https://files.minecraftforge.net/net/minecraftforge/forge/promotions_slim.json"
 _MAVEN_BASE = "https://maven.minecraftforge.net"
@@ -87,12 +90,14 @@ class ForgeInstaller:
             try:
                 head = self.session.head(url, timeout=15)
                 if head.status_code == 404:
+                    log.debug("Forge installer not found at %s, trying next URL", url)
                     continue
                 head.raise_for_status()
             except Exception as exc:
                 last_exc = exc
                 continue
             installer_jar = output_dir / f"forge-{self.minecraft_version}-{resolved}-installer.jar"
+            log.debug("Downloading Forge installer: %s", url)
             download_file(
                 url, installer_jar, session=self.session, show_progress=self.show_progress
             )
@@ -105,8 +110,10 @@ class ForgeInstaller:
     def install(self, output_dir: Path) -> None:
         """Download and run the Forge installer in *output_dir*."""
         resolved = self._resolve_forge_version()
+        log.info("Resolved Forge version: %s", resolved)
         installer_jar = self._download_installer(output_dir, resolved)
 
+        log.info("Running Forge installer (this may take a while)...")
         try:
             subprocess.run(
                 ["java", "-jar", str(installer_jar), "--installServer"],

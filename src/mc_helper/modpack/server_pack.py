@@ -21,6 +21,7 @@ Workflow:
 
 import fnmatch
 import hashlib
+import logging
 import shutil
 import tarfile
 import tempfile
@@ -32,6 +33,8 @@ import requests
 from mc_helper.http_client import build_session, download_file
 from mc_helper.manifest import Manifest
 from mc_helper.utils import disable_mods, find_content_root
+
+log = logging.getLogger(__name__)
 
 _GITHUB_API = "https://api.github.com"
 
@@ -175,6 +178,7 @@ class ServerPackInstaller:
             download_url = self.url
         else:
             raise ValueError("Either url or github must be provided")
+        log.info("Resolved server pack URL: %s", download_url)
 
         # Derive archive filename from URL
         archive_name = download_url.split("?")[0].rstrip("/").split("/")[-1]
@@ -189,15 +193,18 @@ class ServerPackInstaller:
             # 3. Check SHA-1 for idempotency
             sha1 = _sha1_file(tmp_archive)
             if not self.force_update and manifest.pack_sha1 == sha1:
+                log.info("Server pack SHA-1 unchanged — skipping extraction")
                 return
 
             # 4. Extract into temp dir
+            log.info("Extracting server pack...")
             with tempfile.TemporaryDirectory() as tmp_str:
                 tmp_dir = Path(tmp_str)
                 _extract(tmp_archive, tmp_dir, self.strip_components, original_name=archive_name)
 
                 # 5. Find content root
                 content_root = find_content_root(tmp_dir)
+                log.debug("Content root: %s", content_root)
 
                 # 7. Rename disable_mods entries
                 if self.disable_mods_patterns:
