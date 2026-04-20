@@ -63,18 +63,33 @@ def test_server_invalid_type():
 
 
 def test_server_type_optional_with_modpack():
-    data = {"server": {"eula": True}, "modpack": {"platform": "modrinth", "project": "fabric-api"}}
+    data = {
+        "server": {"eula": True},
+        "modpack": {"platform": "modrinth", "source": {"project": "fabric-api"}},
+    }
     cfg = RootConfig.model_validate(data)
     assert cfg.server.type is None
 
 
-def test_server_type_optional_with_server_pack():
-    data = {"server": {"eula": True}, "serverpack": {"url": "https://example.com/pack.zip"}}
+def test_server_type_optional_with_github_modpack():
+    data = {
+        "server": {"eula": True},
+        "modpack": {"platform": "github", "source": {"repo": "owner/repo"}},
+    }
     cfg = RootConfig.model_validate(data)
     assert cfg.server.type is None
 
 
-def test_server_type_required_without_modpack_or_server_pack():
+def test_server_type_optional_with_url_modpack():
+    data = {
+        "server": {"eula": True},
+        "modpack": {"platform": "url", "source": {"url": "https://example.com/pack.zip"}},
+    }
+    cfg = RootConfig.model_validate(data)
+    assert cfg.server.type is None
+
+
+def test_server_type_required_without_modpack():
     with pytest.raises(ValidationError, match="server.type is required"):
         RootConfig.model_validate({"server": {}})
 
@@ -93,12 +108,11 @@ def test_no_content_sections_ok():
     cfg = RootConfig.model_validate(_minimal_data())
     assert cfg.modpack is None
     assert cfg.mods is None
-    assert cfg.serverpack is None
 
 
 def test_modpack_and_mods_allowed():
     data = _minimal_data(
-        modpack={"platform": "modrinth", "project": "fabric-api"},
+        modpack={"platform": "modrinth", "source": {"project": "fabric-api"}},
         mods={"modrinth": ["fabric-api"]},
     )
     cfg = RootConfig.model_validate(data)
@@ -106,60 +120,94 @@ def test_modpack_and_mods_allowed():
     assert cfg.mods is not None
 
 
-def test_modpack_and_server_pack_raises():
-    data = _minimal_data(
-        modpack={"platform": "modrinth", "project": "fabric-api"},
-        serverpack={"url": "https://example.com/pack.zip"},
-    )
-    with pytest.raises(ValidationError, match="modpack"):
-        RootConfig.model_validate(data)
-
-
-def test_mods_and_server_pack_allowed():
-    data = _minimal_data(
-        mods={"modrinth": ["fabric-api"]},
-        serverpack={"url": "https://example.com/pack.zip"},
-    )
-    cfg = RootConfig.model_validate(data)
-    assert cfg.mods is not None
-    assert cfg.serverpack is not None
-
-
 # ── ModpackConfig ─────────────────────────────────────────────────────────────
 
 
 def test_modrinth_modpack_valid():
-    data = _minimal_data(modpack={"platform": "modrinth", "project": "better-mc-fabric"})
+    data = _minimal_data(
+        modpack={"platform": "modrinth", "source": {"project": "better-mc-fabric"}}
+    )
     cfg = RootConfig.model_validate(data)
     assert cfg.modpack.platform == "modrinth"
-    assert cfg.modpack.project == "better-mc-fabric"
-    assert cfg.modpack.version == "LATEST"
-    assert cfg.modpack.version_type == "release"
+    assert cfg.modpack.source.project == "better-mc-fabric"
+    assert cfg.modpack.source.version == "LATEST"
+    assert cfg.modpack.source.version_type == "release"
 
 
 def test_modrinth_modpack_missing_project():
-    data = _minimal_data(modpack={"platform": "modrinth"})
+    data = _minimal_data(modpack={"platform": "modrinth", "source": {}})
     with pytest.raises(ValidationError, match="project"):
         RootConfig.model_validate(data)
 
 
 def test_curseforge_modpack_valid():
     data = _minimal_data(
-        modpack={"platform": "curseforge", "api_key": "abc123", "slug": "all-the-mods-9"}
+        modpack={
+            "platform": "curseforge",
+            "source": {"api_key": "abc123", "slug": "all-the-mods-9"},
+        }
     )
     cfg = RootConfig.model_validate(data)
-    assert cfg.modpack.slug == "all-the-mods-9"
+    assert cfg.modpack.source.slug == "all-the-mods-9"
 
 
 def test_curseforge_modpack_missing_api_key():
-    data = _minimal_data(modpack={"platform": "curseforge", "slug": "atm9"})
+    data = _minimal_data(
+        modpack={"platform": "curseforge", "source": {"slug": "atm9"}}
+    )
     with pytest.raises(ValidationError, match="api_key"):
         RootConfig.model_validate(data)
 
 
 def test_curseforge_modpack_missing_slug_and_file_id():
-    data = _minimal_data(modpack={"platform": "curseforge", "api_key": "abc"})
+    data = _minimal_data(
+        modpack={"platform": "curseforge", "source": {"api_key": "abc"}}
+    )
     with pytest.raises(ValidationError, match="slug"):
+        RootConfig.model_validate(data)
+
+
+# ── GitHub / URL modpack platforms ───────────────────────────────────────────
+
+
+def test_github_modpack_valid():
+    data = _minimal_data(
+        modpack={
+            "platform": "github",
+            "source": {"repo": "ATM-Team/ATM-10", "tag": "v10.0", "asset": "*server*"},
+        }
+    )
+    cfg = RootConfig.model_validate(data)
+    assert cfg.modpack.source.repo == "ATM-Team/ATM-10"
+    assert cfg.modpack.source.tag == "v10.0"
+    assert cfg.modpack.source.strip_components == 0
+    assert cfg.modpack.source.force_update is False
+
+
+def test_github_modpack_missing_repo():
+    data = _minimal_data(
+        modpack={"platform": "github", "source": {"tag": "v1.0"}}
+    )
+    with pytest.raises(ValidationError, match="repo"):
+        RootConfig.model_validate(data)
+
+
+def test_url_modpack_valid():
+    data = _minimal_data(
+        modpack={
+            "platform": "url",
+            "source": {"url": "https://example.com/pack.zip"},
+        }
+    )
+    cfg = RootConfig.model_validate(data)
+    assert cfg.modpack.source.url == "https://example.com/pack.zip"
+
+
+def test_url_modpack_missing_url():
+    data = _minimal_data(
+        modpack={"platform": "url", "source": {}}
+    )
+    with pytest.raises(ValidationError, match="url"):
         RootConfig.model_validate(data)
 
 
@@ -190,38 +238,6 @@ def test_mods_curseforge():
     assert cfg.mods.curseforge.files == ["jei"]
 
 
-# ── ServerPackConfig ──────────────────────────────────────────────────────────
-
-
-def test_server_pack_direct_url():
-    data = _minimal_data(serverpack={"url": "https://example.com/pack.zip"})
-    cfg = RootConfig.model_validate(data)
-    assert cfg.serverpack.url == "https://example.com/pack.zip"
-    assert cfg.serverpack.strip_components == 0
-    assert cfg.serverpack.force_update is False
-
-
-def test_server_pack_github():
-    data = _minimal_data(serverpack={"github": "ATM-Team/ATM-10", "tag": "v10.0"})
-    cfg = RootConfig.model_validate(data)
-    assert cfg.serverpack.github == "ATM-Team/ATM-10"
-    assert cfg.serverpack.tag == "v10.0"
-
-
-def test_server_pack_both_url_and_github_raises():
-    data = _minimal_data(
-        serverpack={"url": "https://example.com/pack.zip", "github": "owner/repo"}
-    )
-    with pytest.raises(ValidationError, match="only one"):
-        RootConfig.model_validate(data)
-
-
-def test_server_pack_neither_raises():
-    data = _minimal_data(serverpack={"tag": "LATEST"})
-    with pytest.raises(ValidationError, match="one of"):
-        RootConfig.model_validate(data)
-
-
 # ── load_config ───────────────────────────────────────────────────────────────
 
 
@@ -238,10 +254,11 @@ def test_load_config_env_interpolation(tmp_path, monkeypatch):
     cfg_file = tmp_path / "config.yaml"
     cfg_file.write_text(
         "server:\n  type: vanilla\n"
-        "modpack:\n  platform: curseforge\n  api_key: ${CF_API_KEY}\n  slug: atm9\n"
+        "modpack:\n  platform: curseforge\n"
+        "  source:\n    api_key: ${CF_API_KEY}\n    slug: atm9\n"
     )
     cfg = load_config(cfg_file)
-    assert cfg.modpack.api_key == "test-key-123"
+    assert cfg.modpack.source.api_key == "test-key-123"
 
 
 def test_load_config_missing_env_raises(tmp_path, monkeypatch):
@@ -249,7 +266,8 @@ def test_load_config_missing_env_raises(tmp_path, monkeypatch):
     cfg_file = tmp_path / "config.yaml"
     cfg_file.write_text(
         "server:\n  type: vanilla\n"
-        "modpack:\n  platform: curseforge\n  api_key: ${CF_API_KEY}\n  slug: atm9\n"
+        "modpack:\n  platform: curseforge\n"
+        "  source:\n    api_key: ${CF_API_KEY}\n    slug: atm9\n"
     )
     with pytest.raises(ValueError, match="CF_API_KEY"):
         load_config(cfg_file)

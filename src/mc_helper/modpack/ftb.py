@@ -20,6 +20,7 @@ from pathlib import Path
 
 import requests
 
+from mc_helper.config import ModpackConfig
 from mc_helper.http_client import build_session, download_file
 from mc_helper.manifest import Manifest
 

@@ -10,9 +10,9 @@ from mc_helper.config import load_config
 from mc_helper.http_client import build_session, download_file
 from mc_helper.manifest import Manifest
 from mc_helper.modpack import curseforge as modpack_cf
+from mc_helper.modpack import custom as modpack_custom
 from mc_helper.modpack import ftb as modpack_ftb
 from mc_helper.modpack import modrinth as modpack_mr
-from mc_helper.modpack import serverpack
 from mc_helper.mods import curseforge as cf_mods
 from mc_helper.mods import modrinth as mr_mods
 from mc_helper.server import fabric, forge, neoforge, paper, purpur, vanilla
@@ -110,9 +110,7 @@ def _cmd_setup(args: argparse.Namespace) -> None:
     if dry_run:
         log.info("[dry-run] No files will be downloaded or written.")
 
-    if config.serverpack:
-        _setup_server_pack(config, output_dir, dry_run)
-    elif config.modpack:
+    if config.modpack:
         _setup_modpack(config, output_dir, dry_run)
     elif config.mods:
         _setup_mods(config, output_dir, dry_run)
@@ -277,30 +275,9 @@ def _write_server_files(
         launch_path.chmod(0o755)
 
 
-def _setup_server_pack(config, output_dir: Path, dry_run: bool) -> None:
-    if dry_run:
-        log.info("[dry-run] Would install server pack to %s", output_dir)
-        _write_server_files(config, output_dir, None, dry_run)
-        return
-
-    log.info("Installing server pack to %s...", output_dir)
-    sp = config.serverpack
-    start_artifact = serverpack.ServerPackInstaller(
-        url=sp.url,
-        github=sp.github,
-        tag=sp.tag,
-        asset=sp.asset,
-        token=sp.token,
-        strip_components=sp.strip_components,
-        disable_mods_patterns=sp.disable_mods,
-        force_update=sp.force_update,
-    ).install(output_dir)
-    _write_server_files(config, output_dir, start_artifact, dry_run)
-    log.info("Server pack installed to %s", output_dir)
-
-
 def _setup_modpack(config, output_dir: Path, dry_run: bool) -> None:
     mp = config.modpack
+    src = mp.source
 
     if dry_run:
         log.info("[dry-run] Would install %s modpack to %s", mp.platform, output_dir)
@@ -309,13 +286,31 @@ def _setup_modpack(config, output_dir: Path, dry_run: bool) -> None:
 
     log.info("Installing %s modpack to %s...", mp.platform, output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
+    session = build_session()
+
+    if mp.platform in ("github", "url"):
+        start_artifact = modpack_custom.ServerPackInstaller(
+            url=src.url if mp.platform == "url" else None,
+            github=src.repo if mp.platform == "github" else None,
+            tag=src.tag if mp.platform == "github" else "LATEST",
+            asset=src.asset if mp.platform == "github" else None,
+            token=src.token,
+            strip_components=src.strip_components,
+            exclude_mods=mp.exclude_mods or None,
+            force_update=src.force_update,
+            start_artifact=src.start_artifact,
+            session=session,
+        ).install(output_dir)
+        _write_server_files(config, output_dir, start_artifact, dry_run)
+        log.info("Server pack installed to %s", output_dir)
+        return
+
     loader = (
         config.server.type
         if config.server.type not in (None, "vanilla", "paper", "purpur")
         else None
     )
 
-    session = build_session()
     if config.server.minecraft_version:
         mc_version = _resolve_mc_version(session, config.server.minecraft_version)
     else:
@@ -323,31 +318,31 @@ def _setup_modpack(config, output_dir: Path, dry_run: bool) -> None:
 
     if mp.platform == "modrinth":
         modpack_mr.ModrinthPackInstaller(
-            project=mp.project,
+            project=src.project,
             minecraft_version=mc_version,
             loader=loader,
-            version_type=mp.version_type,
-            requested_version=mp.version,
+            version_type=src.version_type,
+            requested_version=src.version,
             exclude_mods=mp.exclude_mods or None,
             overrides_exclusions=mp.overrides_exclusions or None,
             session=session,
         ).install(output_dir)
     elif mp.platform == "curseforge":
         modpack_cf.CurseForgePackInstaller(
-            api_key=mp.api_key,
-            slug=mp.slug,
-            file_id=mp.file_id,
-            filename_matcher=mp.filename_matcher,
+            api_key=src.api_key,
+            slug=src.slug,
+            file_id=src.file_id,
+            filename_matcher=src.filename_matcher,
             exclude_mods=mp.exclude_mods or None,
             force_include_mods=mp.force_include_mods or None,
             overrides_exclusions=mp.overrides_exclusions or None,
         ).install(output_dir)
     elif mp.platform == "ftb":
         modpack_ftb.FTBPackInstaller(
-            pack_id=mp.pack_id,
-            version_id=mp.version_id,
-            api_key=mp.api_key or "public",
-            version_type=mp.version_type,
+            pack_id=src.pack_id,
+            version_id=src.version_id,
+            api_key=src.api_key or "public",
+            version_type=src.version_type,
             exclude_mods=mp.exclude_mods or None,
             session=session,
         ).install(output_dir)

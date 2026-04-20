@@ -4,5 +4,8 @@ server:
   eula: true
   memory: 4G
 
-serverpack:
-  url: https://downloads.gtnewhorizons.com/ServerPacks/GT_New_Horizons_2.8.4_Server_Java_17-25.zip
+modpack:
+  platform: url
+  source:
+    url: https://downloads.gtnewhorizons.com/ServerPacks/GT_New_Horizons_2.8.4_Server_Java_17-25.zip
+    start_artifact: lwjgl3ify-forgePatches.jar

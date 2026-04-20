@@ -56,47 +56,83 @@ class ServerConfig(BaseModel):
 
 # ── Modpack ───────────────────────────────────────────────────────────────────
 
-ModpackPlatform = Literal["modrinth", "curseforge", "ftb"]
+ModpackPlatform = Literal["modrinth", "curseforge", "ftb", "github", "url"]
 VersionType = Literal["release", "beta", "alpha"]
 
 
-class ModpackConfig(BaseModel):
-    platform: ModpackPlatform
-
-    # Modrinth
-    project: Optional[str] = None
+class ModrinthSource(BaseModel):
+    project: str
     version: str = "LATEST"
     version_type: VersionType = "release"
 
-    # CurseForge
-    api_key: Optional[str] = None
+
+class CurseForgeSource(BaseModel):
+    api_key: str
     slug: Optional[str] = None
     file_id: Optional[int] = None
     filename_matcher: Optional[str] = None
 
-    # FTB
-    pack_id: Optional[int] = None
-    version_id: Optional[int] = None
+    @model_validator(mode="after")
+    def _check_slug_or_file_id(self) -> "CurseForgeSource":
+        if not self.slug and not self.file_id:
+            raise ValueError("source.slug or source.file_id is required for platform 'curseforge'")
+        return self
 
-    # Shared
+
+class FTBSource(BaseModel):
+    pack_id: int
+    version_id: Optional[int] = None
+    api_key: Optional[str] = None
+    version_type: VersionType = "release"
+
+
+class GithubSource(BaseModel):
+    repo: str
+    tag: str = "LATEST"
+    asset: Optional[str] = None
+    token: Optional[str] = None
+    strip_components: int = 0
+    force_update: bool = False
+    start_artifact: Optional[str] = None
+
+
+class UrlSource(BaseModel):
+    url: str
+    token: Optional[str] = None
+    strip_components: int = 0
+    force_update: bool = False
+    start_artifact: Optional[str] = None
+
+
+Source = ModrinthSource | CurseForgeSource | FTBSource | GithubSource | UrlSource
+
+_SOURCE_MAP: dict[str, type[BaseModel]] = {
+    "modrinth": ModrinthSource,
+    "curseforge": CurseForgeSource,
+    "ftb": FTBSource,
+    "github": GithubSource,
+    "url": UrlSource,
+}
+
+
+class ModpackConfig(BaseModel):
+    platform: ModpackPlatform
+    source: Source
+
     exclude_mods: list[str] = Field(default_factory=list)
     force_include_mods: list[str] = Field(default_factory=list)
     overrides_exclusions: list[str] = Field(default_factory=list)
 
-    @model_validator(mode="after")
-    def _check_platform_fields(self) -> "ModpackConfig":
-        if self.platform == "modrinth" and not self.project:
-            raise ValueError("modpack.project is required for platform 'modrinth'")
-        if self.platform == "curseforge":
-            if not self.api_key:
-                raise ValueError("modpack.api_key is required for platform 'curseforge'")
-            if not self.slug and not self.file_id:
-                raise ValueError(
-                    "modpack.slug or modpack.file_id is required for platform 'curseforge'"
-                )
-        if self.platform == "ftb" and self.pack_id is None:
-            raise ValueError("modpack.pack_id is required for platform 'ftb'")
-        return self
+    @model_validator(mode="before")
+    @classmethod
+    def _parse_source(cls, data: object) -> object:
+        if not isinstance(data, dict):
+            return data
+        platform = data.get("platform")
+        source_raw = data.get("source", {})
+        if platform in _SOURCE_MAP:
+            data["source"] = _SOURCE_MAP[platform].model_validate(source_raw)
+        return data
 
 
 # ── Mods ──────────────────────────────────────────────────────────────────────
@@ -122,31 +158,6 @@ class ModsConfig(BaseModel):
         return self
 
 
-# ── Server Pack ───────────────────────────────────────────────────────────────
-
-
-class ServerPackConfig(BaseModel):
-    # Source: exactly one of url or github must be set
-    url: Optional[str] = None
-    github: Optional[str] = None
-    tag: str = "LATEST"
-    asset: Optional[str] = None
-    token: Optional[str] = None
-
-    # Extraction options
-    strip_components: int = 0
-    disable_mods: list[str] = Field(default_factory=list)
-    force_update: bool = False
-
-    @model_validator(mode="after")
-    def _check_source(self) -> "ServerPackConfig":
-        if self.url and self.github:
-            raise ValueError("serverpack: only one of 'url' or 'github' may be set")
-        if not self.url and not self.github:
-            raise ValueError("serverpack: one of 'url' or 'github' must be set")
-        return self
-
-
 # ── Root ──────────────────────────────────────────────────────────────────────
 
 
@@ -154,13 +165,10 @@ class RootConfig(BaseModel):
     server: ServerConfig
     modpack: Optional[ModpackConfig] = None
     mods: Optional[ModsConfig] = None
-    serverpack: Optional[ServerPackConfig] = None
 
     @model_validator(mode="after")
     def _check_install_mode(self) -> "RootConfig":
-        if self.modpack and self.serverpack:
-            raise ValueError("modpack and serverpack cannot both be set")
-        if self.modpack is None and self.serverpack is None:
+        if self.modpack is None:
             if self.server.type is None:
-                raise ValueError("server.type is required when not using modpack or serverpack")
+                raise ValueError("server.type is required when not using modpack")
         return self

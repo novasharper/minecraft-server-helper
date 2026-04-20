@@ -9,7 +9,7 @@ import pytest
 import responses as rsps_lib
 
 from mc_helper.http_client import build_session
-from mc_helper.modpack.serverpack import (
+from mc_helper.modpack.custom import (
     ServerPackInstaller,
     _extract_tar,
     _extract_zip,
@@ -264,7 +264,7 @@ def test_install_disable_mods(tmp_path):
     session = build_session()
     ServerPackInstaller(
         url="https://example.com/pack.zip",
-        disable_mods_patterns=["optifine.jar"],
+        exclude_mods=["optifine.jar"],
         session=session,
         show_progress=False,
     ).install(tmp_path)

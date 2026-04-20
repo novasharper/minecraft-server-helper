@@ -1,5 +1,6 @@
-# example-config.yaml — annotated reference covering all three modes.
-# Exactly ONE of `modpack`, `mods`, or `serverpack` must be present.
+# example-config.yaml — annotated reference covering all install modes.
+# Use `modpack` for modpacks and server packs, or `mods` for individual mods.
+# `modpack` and `mods` can be combined (mods are layered on top).
 
 server:
   type: fabric                  # vanilla | forge | neoforge | fabric | quilt | paper | purpur
@@ -16,26 +17,47 @@ server:
 
 # ── Option A: Install a modpack ───────────────────────────────────────────────
 modpack:
-  platform: modrinth            # modrinth | curseforge | ftb
+  platform: modrinth            # modrinth | curseforge | ftb | github | url
 
-  # Modrinth fields
-  project: "better-mc-fabric"   # slug, project ID, page URL, or local .mrpack path
-  version: LATEST
-  version_type: release         # release | beta | alpha
+  # ── Modrinth source ──
+  source:
+    project: "better-mc-fabric" # slug, project ID, page URL, or local .mrpack path
+    version: LATEST
+    version_type: release       # release | beta | alpha
 
-  # CurseForge fields (requires CF_API_KEY)
-  api_key: ${CF_API_KEY}
-  slug: "all-the-mods-9"
-  file_id: ~                    # null = newest matching file
-  filename_matcher: ~           # optional substring filter on filename
+  # ── CurseForge source (requires CF_API_KEY) ──
+  # source:
+  #   api_key: ${CF_API_KEY}
+  #   slug: "all-the-mods-9"
+  #   file_id: ~                # null = newest matching file
+  #   filename_matcher: ~       # optional substring filter on filename
 
-  # FTB fields
-  pack_id: ~                    # numeric FTB pack ID (required for ftb)
-  version_id: ~                 # null = latest release (or matching version_type)
-  # api_key: ${FTB_API_KEY}     # only needed for private packs; defaults to "public"
+  # ── FTB source ──
+  # source:
+  #   pack_id: 130              # numeric FTB pack ID (required)
+  #   version_id: ~             # null = latest release (or matching version_type)
+  #   api_key: ${FTB_API_KEY}   # only needed for private packs; defaults to "public"
+  #   version_type: release
 
-  # Shared
-  exclude_mods: []              # glob patterns matched against filenames to skip
+  # ── GitHub source (pre-assembled server pack from a GitHub release) ──
+  # source:
+  #   repo: "ATM-Team/ATM-10"  # owner/repo
+  #   tag: LATEST               # specific tag or LATEST
+  #   asset: "*server*"         # glob to select asset; picks first if omitted
+  #   token: ${GITHUB_TOKEN}    # optional, for private repos
+  #   strip_components: 1       # strip N leading path segments (like tar --strip-components)
+  #   force_update: false       # re-extract even if checksum matches
+  #   start_artifact: ~         # explicit start script/jar; auto-detected if omitted
+
+  # ── URL source (pre-assembled server pack from a direct URL) ──
+  # source:
+  #   url: https://example.com/mypack-server.zip
+  #   strip_components: 0
+  #   force_update: false
+  #   start_artifact: ~
+
+  # Shared fields (all platforms)
+  exclude_mods: []              # glob patterns: skip downloads (modrinth/curseforge/ftb) or rename to .disabled (github/url)
   force_include_mods: []        # slugs/IDs to always include even if filtered (CurseForge only)
   overrides_exclusions: []      # paths inside overrides/ to skip (Modrinth/CurseForge only)
 
@@ -53,19 +75,3 @@ modpack:
 #       - "238222"                # project ID
 #   urls:
 #     - https://example.com/mymod-1.0.jar
-
-# ── Option C: Install a pre-assembled server pack ─────────────────────────────
-# serverpack:
-#   # Option C-1: direct URL
-#   url: https://example.com/mypack-server.zip
-#
-#   # Option C-2: GitHub release asset
-#   github: "ATM-Team/ATM-10"   # owner/repo
-#   tag: LATEST                 # specific tag or LATEST
-#   asset: "*server*"           # glob to select asset; picks first if omitted
-#   token: ${GITHUB_TOKEN}      # optional, for private repos
-#
-#   # Shared options
-#   strip_components: 1         # strip N leading path segments (like tar --strip-components)
-#   disable_mods: []            # rename matched filenames to *.disabled after extraction
-#   force_update: false         # re-extract even if checksum matches

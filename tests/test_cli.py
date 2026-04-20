@@ -333,7 +333,10 @@ class TestCmdSetupDispatch:
         """modpack + mods: _setup_modpack runs, then _install_extra_mods runs."""
         data = _base_config("fabric")
         data["server"]["output_dir"] = str(tmp_path)
-        data["modpack"] = {"platform": "modrinth", "project": "fabulously-optimized"}
+        data["modpack"] = {
+            "platform": "modrinth",
+            "source": {"project": "fabulously-optimized"},
+        }
         data["mods"] = {"modrinth": ["iris"]}
         cfg_file = _write_config(tmp_path, data)
         from mc_helper.cli import _cmd_setup
@@ -347,29 +350,35 @@ class TestCmdSetupDispatch:
         mock_modpack.assert_called_once()
         mock_extra.assert_called_once()
 
-    def test_server_pack_with_extra_mods_calls_both(self, tmp_path):
-        """serverpack + mods: _setup_server_pack runs, then _install_extra_mods runs."""
+    def test_url_modpack_with_extra_mods_calls_both(self, tmp_path):
+        """url modpack + mods: _setup_modpack runs, then _install_extra_mods runs."""
         data = _base_config("fabric")
         data["server"]["output_dir"] = str(tmp_path)
-        data["serverpack"] = {"url": "https://example.com/pack.zip"}
+        data["modpack"] = {
+            "platform": "url",
+            "source": {"url": "https://example.com/pack.zip"},
+        }
         data["mods"] = {"modrinth": ["iris"]}
         cfg_file = _write_config(tmp_path, data)
         from mc_helper.cli import _cmd_setup
 
         with (
-            patch("mc_helper.cli._setup_server_pack") as mock_sp,
+            patch("mc_helper.cli._setup_modpack") as mock_modpack,
             patch("mc_helper.cli._install_extra_mods") as mock_extra,
         ):
             _cmd_setup(self._make_args(cfg_file))
 
-        mock_sp.assert_called_once()
+        mock_modpack.assert_called_once()
         mock_extra.assert_called_once()
 
     def test_modpack_without_mods_does_not_call_extra(self, tmp_path):
         """modpack alone: _install_extra_mods must NOT be called."""
         data = _base_config("fabric")
         data["server"]["output_dir"] = str(tmp_path)
-        data["modpack"] = {"platform": "modrinth", "project": "fabulously-optimized"}
+        data["modpack"] = {
+            "platform": "modrinth",
+            "source": {"project": "fabulously-optimized"},
+        }
         cfg_file = _write_config(tmp_path, data)
         from mc_helper.cli import _cmd_setup
 
@@ -385,7 +394,10 @@ class TestCmdSetupDispatch:
         """Dry-run with modpack + mods logs extra mods line without downloading."""
         data = _base_config("fabric")
         data["server"]["output_dir"] = str(tmp_path)
-        data["modpack"] = {"platform": "modrinth", "project": "fabulously-optimized"}
+        data["modpack"] = {
+            "platform": "modrinth",
+            "source": {"project": "fabulously-optimized"},
+        }
         data["mods"] = {"modrinth": ["iris", "sodium"], "urls": ["https://example.com/mod.jar"]}
         cfg_file = _write_config(tmp_path, data)
         from mc_helper.cli import _cmd_setup

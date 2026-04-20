@@ -130,26 +130,6 @@ def _sha1_file(path: Path) -> str:
 # ── Start-artifact detection ──────────────────────────────────────────────────
 
 
-def _detect_start_artifact(output_dir: Path) -> Path | None:
-    """Return the best server start artifact found in *output_dir*, or ``None``.
-
-    Checks for known start scripts and jar naming conventions in priority
-    order so that packs that bundle their own launcher (GTNH ``ServerStart.sh``,
-    NeoForge ``run.sh``, Forge universal jars, etc.) are invoked correctly
-    instead of falling back to the generic ``server.jar`` name.
-    """
-    for script in ("run.sh", "ServerStart.sh", "start.sh", "startserver.sh"):
-        if (output_dir / script).exists():
-            return output_dir / script
-    forge_jars = sorted(output_dir.glob("forge-*.jar"))
-    if forge_jars:
-        return forge_jars[0]
-    mc_jars = sorted(output_dir.glob("minecraft_server.*.jar"))
-    if mc_jars:
-        return mc_jars[0]
-    return None
-
-
 # ── Installer class ───────────────────────────────────────────────────────────
 
 
@@ -158,14 +138,16 @@ class ServerPackInstaller:
 
     def __init__(
         self,
+        *,
         url: str | None = None,
         github: str | None = None,
         tag: str = "LATEST",
         asset: str | None = None,
         token: str | None = None,
         strip_components: int = 0,
-        disable_mods_patterns: list[str] | None = None,
+        exclude_mods: list[str] | None = None,
         force_update: bool = False,
+        start_artifact: str | None = None,
         session: requests.Session | None = None,
         show_progress: bool = True,
     ) -> None:
@@ -174,8 +156,9 @@ class ServerPackInstaller:
         self.tag = tag
         self.asset = asset
         self.strip_components = strip_components
-        self.disable_mods_patterns = disable_mods_patterns
+        self.exclude_mods = exclude_mods or []
         self.force_update = force_update
+        self._start_artifact_override = start_artifact
         self.show_progress = show_progress
 
         if session is None:
@@ -187,6 +170,37 @@ class ServerPackInstaller:
             self.session = session
             if token:
                 self.session.headers["Authorization"] = f"Bearer {token}"
+
+    def _detect_start_artifact(self, output_dir: Path) -> Path | None:
+        """Return the best server start artifact found in *output_dir*, or ``None``.
+
+        Checks for known start scripts and jar naming conventions in priority
+        order so that packs that bundle their own launcher (GTNH ``ServerStart.sh``,
+        NeoForge ``run.sh``, Forge universal jars, etc.) are invoked correctly
+        instead of falling back to the generic ``server.jar`` name.
+        """
+        if self._start_artifact_override:
+            return output_dir / self._start_artifact_override
+
+        for file in (
+            "run.sh",
+            "ServerStart.sh",
+            "start.sh",
+            "startserver.sh",
+            "minecraft_server.jar",
+        ):
+            if (output_dir / file).exists():
+                return output_dir / file
+
+        forge_jars = sorted(output_dir.glob("forge-*.jar"))
+        if forge_jars:
+            return forge_jars[0]
+
+        mc_jars = sorted(output_dir.glob("minecraft_server.*.jar"))
+        if mc_jars:
+            return mc_jars[0]
+
+        return None
 
     def install(self, output_dir: Path) -> Path | None:
         """Download and extract the server pack into *output_dir*.
@@ -222,7 +236,7 @@ class ServerPackInstaller:
             sha1 = _sha1_file(tmp_archive)
             if not self.force_update and manifest.pack_sha1 == sha1:
                 log.info("Server pack SHA-1 unchanged — skipping extraction")
-                return _detect_start_artifact(output_dir)
+                return self._detect_start_artifact(output_dir)
 
             # 4. Extract into temp dir
             log.info("Extracting server pack...")
@@ -235,10 +249,10 @@ class ServerPackInstaller:
                 log.debug("Content root: %s", content_root)
 
                 # 7. Rename disable_mods entries
-                if self.disable_mods_patterns:
+                if self.exclude_mods:
                     mods_dir = content_root / "mods"
                     if mods_dir.is_dir():
-                        disable_mods(mods_dir, self.disable_mods_patterns)
+                        disable_mods(mods_dir, self.exclude_mods)
 
                 # 6. Copy content root into output_dir
                 for item in content_root.iterdir():
@@ -257,4 +271,4 @@ class ServerPackInstaller:
         finally:
             tmp_archive.unlink(missing_ok=True)
 
-        return _detect_start_artifact(output_dir)
+        return self._detect_start_artifact(output_dir)
