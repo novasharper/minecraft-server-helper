@@ -15,9 +15,11 @@ Or directly with poetry (requires podman or docker):
 
 import os
 import shutil
+import socket
 import subprocess
 import sys  # for stderr output only
 import tempfile
+import time
 from pathlib import Path
 
 import pytest
@@ -30,6 +32,9 @@ IMAGE = "mc-helper-e2e"
 
 # 20 minutes — modpack downloads can be large
 TIMEOUT = 1200
+
+# 10 minutes — server startup (Forge/NeoForge can be slow on first boot)
+SERVER_START_TIMEOUT = 600
 
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
@@ -154,6 +159,63 @@ def _assert_mods_populated(output_dir: Path) -> None:
     assert jars, f"no .jar files found in {mods_dir}"
 
 
+def _check_server_starts(
+    container_runtime: str,
+    output_dir: Path,
+    e2e_image: str,
+    *,
+    timeout: int = SERVER_START_TIMEOUT,
+) -> None:
+    """Start the installed server in a container and verify port 25565 opens."""
+    # Make the server directory world-writable so the container user can write
+    # world data, logs, etc. (VirtioFS on macOS presents bind-mounts as root:nobody)
+    output_dir.chmod(0o777)
+
+    # Verify port 25565 is not already in use on the host
+    with socket.socket() as probe:
+        if probe.connect_ex(("127.0.0.1", 25565)) == 0:
+            pytest.skip("port 25565 already in use on host — cannot run server startup check")
+
+    container_name = f"mc-helper-e2e-srv-{output_dir.name}"
+    cmd = [
+        container_runtime,
+        "run",
+        "--rm",
+        "--name", container_name,
+        "-p", "25565:25565",
+        "-v", f"{output_dir}:/server",
+        "-w", "/server",
+        e2e_image,
+        "/server/launch.sh",
+    ]
+
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    try:
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            try:
+                with socket.create_connection(("127.0.0.1", 25565), timeout=2):
+                    return  # port open — server is ready
+            except OSError:
+                pass
+            if proc.poll() is not None:
+                stdout, stderr = proc.communicate()
+                pytest.fail(
+                    f"Server process exited early (rc={proc.returncode}).\n"
+                    f"STDOUT:\n{stdout.decode(errors='replace')}\n"
+                    f"STDERR:\n{stderr.decode(errors='replace')}"
+                )
+            time.sleep(3)
+        pytest.fail(f"Server port 25565 did not open within {timeout}s")
+    finally:
+        subprocess.run(
+            [container_runtime, "stop", container_name],
+            capture_output=True,
+            timeout=30,
+        )
+        proc.wait()
+
+
 def _assert_server_artifact(output_dir: Path, pattern: str) -> None:
     """Assert that the server-type-specific file or glob pattern exists."""
     if "*" in pattern:
@@ -220,54 +282,60 @@ def test_modpack_all_of_create(container_runtime, e2e_image, output_base):
 
 
 def test_server_vanilla(container_runtime, e2e_image, output_base):
-    """Vanilla 1.21.4 server JAR installed."""
+    """Vanilla 1.21.4 server JAR installed and starts."""
     result = _run(container_runtime, e2e_image, output_base, "server-vanilla.yaml")
     assert result.returncode == 0, "mc-helper exited non-zero"
     output_dir = output_base / "vanilla"
     _assert_basic_files(output_dir)
     _assert_server_artifact(output_dir, "minecraft_server.*.jar")
+    _check_server_starts(container_runtime, output_dir, e2e_image)
 
 
 def test_server_fabric(container_runtime, e2e_image, output_base):
-    """Fabric 1.21.4 server launcher JAR installed."""
+    """Fabric 1.21.4 server launcher JAR installed and starts."""
     result = _run(container_runtime, e2e_image, output_base, "server-fabric.yaml")
     assert result.returncode == 0, "mc-helper exited non-zero"
     output_dir = output_base / "fabric"
     _assert_basic_files(output_dir)
     _assert_server_artifact(output_dir, "fabric-server-launch.jar")
+    _check_server_starts(container_runtime, output_dir, e2e_image)
 
 
 def test_server_forge(container_runtime, e2e_image, output_base):
-    """Forge 1.21.1 server installed via --installServer (creates run.sh)."""
+    """Forge 1.21.1 server installed via --installServer (creates run.sh) and starts."""
     result = _run(container_runtime, e2e_image, output_base, "server-forge.yaml")
     assert result.returncode == 0, "mc-helper exited non-zero"
     output_dir = output_base / "forge"
     _assert_basic_files(output_dir)
     _assert_server_artifact(output_dir, "run.sh")
+    _check_server_starts(container_runtime, output_dir, e2e_image)
 
 
 def test_server_neoforge(container_runtime, e2e_image, output_base):
-    """NeoForge 1.21.4 server installed via --installServer (creates run.sh)."""
+    """NeoForge 1.21.4 server installed via --installServer (creates run.sh) and starts."""
     result = _run(container_runtime, e2e_image, output_base, "server-neoforge.yaml")
     assert result.returncode == 0, "mc-helper exited non-zero"
     output_dir = output_base / "neoforge"
     _assert_basic_files(output_dir)
     _assert_server_artifact(output_dir, "run.sh")
+    _check_server_starts(container_runtime, output_dir, e2e_image)
 
 
 def test_server_paper(container_runtime, e2e_image, output_base):
-    """Paper 1.21.4 server JAR installed."""
+    """Paper 1.21.4 server JAR installed and starts."""
     result = _run(container_runtime, e2e_image, output_base, "server-paper.yaml")
     assert result.returncode == 0, "mc-helper exited non-zero"
     output_dir = output_base / "paper"
     _assert_basic_files(output_dir)
     _assert_server_artifact(output_dir, "paper-*.jar")
+    _check_server_starts(container_runtime, output_dir, e2e_image)
 
 
 def test_server_purpur(container_runtime, e2e_image, output_base):
-    """Purpur 1.21.4 server JAR installed."""
+    """Purpur 1.21.4 server JAR installed and starts."""
     result = _run(container_runtime, e2e_image, output_base, "server-purpur.yaml")
     assert result.returncode == 0, "mc-helper exited non-zero"
     output_dir = output_base / "purpur"
     _assert_basic_files(output_dir)
     _assert_server_artifact(output_dir, "purpur-*.jar")
+    _check_server_starts(container_runtime, output_dir, e2e_image)
