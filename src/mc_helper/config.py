@@ -52,6 +52,9 @@ class ServerConfig(BaseModel):
     eula: bool = False
     memory: str = "1G"
     properties: dict[str, str | int | bool] = Field(default_factory=dict)
+    jvm_args: list[str] = Field(default_factory=list)
+    server_args: list[str] = Field(default_factory=lambda: ["nogui"])
+    java_bin: str = "java"
 
 
 # ── Modpack ───────────────────────────────────────────────────────────────────

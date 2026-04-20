@@ -4,8 +4,7 @@ import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
-log = logging.getLogger(__name__)
-
+from mc_helper import launch as launcher
 from mc_helper.config import load_config
 from mc_helper.http_client import build_session, download_file
 from mc_helper.manifest import Manifest
@@ -17,6 +16,10 @@ from mc_helper.mods import curseforge as cf_mods
 from mc_helper.mods import modrinth as mr_mods
 from mc_helper.server import fabric, forge, neoforge, paper, purpur, vanilla
 from mc_helper.server.vanilla import resolve_version
+
+log = logging.getLogger(__name__)
+
+_DEFAULT_MEMORY = "1G"
 
 
 def main() -> None:
@@ -55,7 +58,9 @@ def main() -> None:
     )
 
     # validate
-    subparsers.add_parser("validate", parents=[_config_parent], help="Validate the configuration file.")
+    subparsers.add_parser(
+        "validate", parents=[_config_parent], help="Validate the configuration file."
+    )
 
     # status
     subparsers.add_parser(
@@ -205,7 +210,7 @@ def _install_server_jar(config, output_dir: Path, dry_run: bool) -> Path | None:
 
 
 def _write_server_files(
-    config, output_dir: Path, start_artifact: Path | None, dry_run: bool, effective_type: str | None = None
+    config, output_dir: Path, start_artifact: Path | None, dry_run: bool
 ) -> None:
     """Write eula.txt, server.properties, and launch.sh into output_dir."""
     log.info("Writing server files to %s...", output_dir)
@@ -253,26 +258,24 @@ def _write_server_files(
                     "\n".join(f"{k}={v}" for k, v in server.properties.items()) + "\n"
                 )
 
-    # launch.sh
-    launch_path = output_dir / "launch.sh"
-    mem = server.memory
+    # launch.sh (and any sibling launch-config files)
     if dry_run:
         start_artifact = output_dir / "dry-run.jar"
-
-    if start_artifact.suffix == ".sh":
-        launch_content = f'#!/bin/sh\nexec ./{start_artifact.name} "$@"\n'
-    else:
-        launch_content = (
-            f"#!/bin/sh\n" f'exec java -Xmx{mem} -Xms{mem} -jar {start_artifact.name} nogui "$@"\n'
+    elif start_artifact is None:
+        raise ValueError(
+            "start_artifact is None; the server installer must return the start artifact path"
         )
 
-    if dry_run:
-        print(f"[dry-run] Would write {launch_path}:")
-        for line in launch_content.splitlines():
-            print(f"  {line}")
-    else:
-        launch_path.write_text(launch_content)
-        launch_path.chmod(0o755)
+    plan = launcher.detect_launch_plan(output_dir, start_artifact)
+    launcher.apply_launch_plan(
+        plan,
+        output_dir,
+        memory=server.memory,
+        jvm_args=server.jvm_args,
+        server_args=server.server_args,
+        java_bin=server.java_bin,
+        dry_run=dry_run,
+    )
 
 
 def _setup_modpack(config, output_dir: Path, dry_run: bool) -> None:
@@ -338,14 +341,23 @@ def _setup_modpack(config, output_dir: Path, dry_run: bool) -> None:
             overrides_exclusions=mp.overrides_exclusions or None,
         ).install(output_dir)
     elif mp.platform == "ftb":
-        modpack_ftb.FTBPackInstaller(
+        ftb_installer = modpack_ftb.FTBPackInstaller(
             pack_id=src.pack_id,
             version_id=src.version_id,
             api_key=src.api_key or "public",
             version_type=src.version_type,
             exclude_mods=mp.exclude_mods or None,
             session=session,
-        ).install(output_dir)
+        )
+        ftb_installer.install(output_dir)
+        # Use the pack's memory recommendation as default when user left it at the minimum
+        if (
+            ftb_installer.recommended_memory_mb is not None
+            and config.server.memory == _DEFAULT_MEMORY
+        ):
+            recommended = f"{ftb_installer.recommended_memory_mb}M"
+            log.info("FTB pack recommends %s RAM; using as server.memory default", recommended)
+            config.server.memory = recommended
 
     # Install server JAR using loader info the modpack installer saved to manifest
     manifest = Manifest(output_dir)
@@ -361,11 +373,11 @@ def _setup_modpack(config, output_dir: Path, dry_run: bool) -> None:
             mc_version, loader_version=loader_version, session=session
         ).install(output_dir)
     elif loader_type == "forge":
-        forge.ForgeInstaller(mc_version, forge_version=loader_version, session=session).install(
-            output_dir
-        )
+        start_artifact = forge.ForgeInstaller(
+            mc_version, forge_version=loader_version, session=session
+        ).install(output_dir)
     elif loader_type == "neoforge":
-        neoforge.NeoForgeInstaller(
+        start_artifact = neoforge.NeoForgeInstaller(
             mc_version, neoforge_version=loader_version, session=session
         ).install(output_dir)
     elif loader_type == "quilt":
@@ -379,7 +391,7 @@ def _setup_modpack(config, output_dir: Path, dry_run: bool) -> None:
     else:
         raise ValueError(f"Unknown loader type from modpack manifest: {loader_type!r}")
 
-    _write_server_files(config, output_dir, start_artifact, dry_run, effective_type=loader_type)
+    _write_server_files(config, output_dir, start_artifact, dry_run)
     log.info("Modpack installed to %s", output_dir)
 
 

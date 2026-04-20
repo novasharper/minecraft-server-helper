@@ -20,7 +20,6 @@ from pathlib import Path
 
 import requests
 
-from mc_helper.config import ModpackConfig
 from mc_helper.http_client import build_session, download_file
 from mc_helper.manifest import Manifest
 
@@ -96,6 +95,7 @@ class FTBPackInstaller:
         self.exclude_mods = exclude_mods or []
         self.session = session or build_session()
         self.show_progress = show_progress
+        self.recommended_memory_mb: int | None = None
 
     def _resolve_version_id(self) -> int:
         """Return the version ID to install, fetching pack metadata if needed."""
@@ -127,7 +127,10 @@ class FTBPackInstaller:
             f"{_API_BASE}/modpack/{self.pack_id}/{version_id}", self.api_key, self.session
         )
 
-        # 4. Parse targets
+        # 4. Parse targets and specs
+        specs = detail.get("specs", {})
+        if specs.get("recommended"):
+            self.recommended_memory_mb = int(specs["recommended"])
         mc_version: str | None = None
         loader_type: str | None = None
         loader_version: str | None = None

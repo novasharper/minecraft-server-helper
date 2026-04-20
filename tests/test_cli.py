@@ -19,7 +19,7 @@ def _write_config(tmp_path: Path, data: dict) -> Path:
 
 
 def _base_config(server_type: str = "vanilla", **extra) -> dict:
-    cfg = {
+    cfg: dict = {
         "server": {
             "type": server_type,
             "minecraft_version": "1.21.1",
@@ -33,6 +33,12 @@ def _base_config(server_type: str = "vanilla", **extra) -> dict:
             },
         }
     }
+    # jvm_args / server_args / java_bin are list/str — serialize separately
+    for key in ("jvm_args", "server_args"):
+        if key in extra:
+            cfg["server"][key] = extra.pop(key)
+    if "java_bin" in extra:
+        cfg["server"]["java_bin"] = extra.pop("java_bin")
     cfg["server"].update(extra)
     return cfg
 
@@ -48,6 +54,14 @@ class TestWriteServerFiles:
         from mc_helper.config import load_config
 
         config = load_config(cfg_file)
+        if jar_path is None and not dry_run:
+            server_type = config_data.get("server", {}).get("type", "vanilla")
+            if server_type in ("forge", "neoforge"):
+                jar_path = tmp_path / "run.sh"
+                jar_path.write_text("#!/bin/sh\n")
+            else:
+                jar_path = tmp_path / "minecraft_server.jar"
+                jar_path.touch()
         _write_server_files(config, tmp_path, jar_path, dry_run)
         return tmp_path
 
@@ -75,7 +89,9 @@ class TestWriteServerFiles:
         from mc_helper.config import load_config
 
         config = load_config(cfg_file)
-        _write_server_files(config, tmp_path, None, dry_run=False)
+        jar = tmp_path / "minecraft_server.jar"
+        jar.touch()
+        _write_server_files(config, tmp_path, jar, dry_run=False)
         assert not (tmp_path / "server.properties").exists()
 
     def test_launch_sh_with_jar(self, tmp_path):
@@ -85,20 +101,69 @@ class TestWriteServerFiles:
         content = (tmp_path / "launch.sh").read_text()
         assert "java -Xmx4G -Xms4G -jar minecraft_server.1.21.1.jar nogui" in content
 
+    def test_launch_sh_jvm_args_in_jar_command(self, tmp_path):
+        jar = tmp_path / "minecraft_server.jar"
+        jar.touch()
+        self._call(
+            _base_config(memory="4G", jvm_args=["-Dfoo=bar", "-XX:+UseG1GC"]),
+            tmp_path,
+            jar_path=jar,
+        )
+        content = (tmp_path / "launch.sh").read_text()
+        assert "-Dfoo=bar" in content
+        assert "-XX:+UseG1GC" in content
+        assert "-Xmx4G" in content
+        assert content.index("-Dfoo=bar") < content.index("-Xmx4G") < content.index("-jar")
+
+    def test_launch_sh_custom_server_args(self, tmp_path):
+        jar = tmp_path / "minecraft_server.jar"
+        jar.touch()
+        self._call(_base_config(server_args=["--noconsole"]), tmp_path, jar_path=jar)
+        content = (tmp_path / "launch.sh").read_text()
+        assert "--noconsole" in content
+        assert content.index("-jar") < content.index("--noconsole")
+
+    def test_launch_sh_custom_java_bin(self, tmp_path):
+        jar = tmp_path / "minecraft_server.jar"
+        jar.touch()
+        self._call(_base_config(java_bin="/opt/java21/bin/java"), tmp_path, jar_path=jar)
+        content = (tmp_path / "launch.sh").read_text()
+        assert "/opt/java21/bin/java" in content
+
     def test_launch_sh_executable(self, tmp_path):
         self._call(_base_config(), tmp_path)
         mode = (tmp_path / "launch.sh").stat().st_mode
         assert mode & stat.S_IXUSR
 
-    def test_launch_sh_forge_no_jar(self, tmp_path):
-        self._call(_base_config(server_type="forge"), tmp_path, jar_path=None)
+    def test_launch_sh_forge_run_sh(self, tmp_path):
+        run_sh = tmp_path / "run.sh"
+        run_sh.write_text("#!/bin/sh\n")
+        self._call(_base_config(server_type="forge", memory="4G"), tmp_path, jar_path=run_sh)
         content = (tmp_path / "launch.sh").read_text()
-        assert "run.sh" in content
+        assert "./run.sh" in content
+        assert "java" not in content
 
-    def test_launch_sh_neoforge_no_jar(self, tmp_path):
-        self._call(_base_config(server_type="neoforge"), tmp_path, jar_path=None)
+    def test_launch_sh_forge_writes_user_jvm_args(self, tmp_path):
+        run_sh = tmp_path / "run.sh"
+        run_sh.write_text("#!/bin/sh\n")
+        (tmp_path / "user_jvm_args.txt").write_text("-XX:+UseG1GC\n")
+        self._call(
+            _base_config(server_type="forge", memory="4G", jvm_args=["-Dfoo=bar"]),
+            tmp_path,
+            jar_path=run_sh,
+        )
+        content = (tmp_path / "user_jvm_args.txt").read_text()
+        assert "-Xmx4G" in content
+        assert "-Xms4G" in content
+        assert "-Dfoo=bar" in content
+        assert "-XX:+UseG1GC" in content
+
+    def test_launch_sh_neoforge_run_sh(self, tmp_path):
+        run_sh = tmp_path / "run.sh"
+        run_sh.write_text("#!/bin/sh\n")
+        self._call(_base_config(server_type="neoforge"), tmp_path, jar_path=run_sh)
         content = (tmp_path / "launch.sh").read_text()
-        assert "run.sh" in content
+        assert "./run.sh" in content
 
     def test_dry_run_writes_nothing(self, tmp_path, capsys):
         self._call(_base_config(), tmp_path, dry_run=True)

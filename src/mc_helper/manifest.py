@@ -78,6 +78,22 @@ class Manifest:
             current.append(entry)
             self.files = current
 
+    @property
+    def launch_kind(self) -> str | None:
+        return self._data.get("launch_kind")
+
+    @launch_kind.setter
+    def launch_kind(self, value: str) -> None:
+        self._data["launch_kind"] = value
+
+    @property
+    def launch_files(self) -> list[str]:
+        return self._data.get("launch_files", [])
+
+    @launch_files.setter
+    def launch_files(self, value: list[str]) -> None:
+        self._data["launch_files"] = value
+
     def files_changed(self, new_files: list[str]) -> bool:
         """Return True if *new_files* differs from the tracked file list."""
         return sorted(self.files) != sorted(new_files)
