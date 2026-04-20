@@ -35,6 +35,9 @@ TIMEOUT = 1200
 # 10 minutes — server startup (Forge/NeoForge can be slow on first boot)
 SERVER_START_TIMEOUT = 600
 
+# 20 minutes — heavy modpacks (GTNH, large Forge packs) load hundreds of mods
+HEAVY_START_TIMEOUT = 1200
+
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 
@@ -239,14 +242,18 @@ def test_modpack_serverpack_gtnh(container_runtime, e2e_image, output_base):
     """GT: New Horizons 2.8.4 installed from a direct-URL server pack."""
     result = _run(container_runtime, e2e_image, output_base, "serverpack-gtnh.yaml")
     assert result.returncode == 0, "mc-helper exited non-zero"
-    _assert_basic_files(output_base / "gtnh")
+    output_dir = output_base / "gtnh"
+    _assert_basic_files(output_dir)
+    _check_server_starts(container_runtime, output_dir, e2e_image, timeout=HEAVY_START_TIMEOUT)
 
 
 def test_modpack_serverpack_tfg(container_runtime, e2e_image, output_base):
     """TerraFirmaGreg Modern v0.11.28 installed from a GitHub release asset."""
     result = _run(container_runtime, e2e_image, output_base, "serverpack-tfg.yaml")
     assert result.returncode == 0, "mc-helper exited non-zero"
-    _assert_basic_files(output_base / "tfg")
+    output_dir = output_base / "tfg"
+    _assert_basic_files(output_dir)
+    _check_server_starts(container_runtime, output_dir, e2e_image, timeout=HEAVY_START_TIMEOUT)
 
 
 # ── Modpack tests ─────────────────────────────────────────────────────────────
@@ -259,6 +266,7 @@ def test_modpack_ftb_stoneblock4(container_runtime, e2e_image, output_base):
     output_dir = output_base / "ftb-sb4"
     _assert_basic_files(output_dir)
     _assert_mods_populated(output_dir)
+    _check_server_starts(container_runtime, output_dir, e2e_image, timeout=HEAVY_START_TIMEOUT)
 
 
 def test_modpack_cobblemon(container_runtime, e2e_image, output_base):
@@ -268,6 +276,7 @@ def test_modpack_cobblemon(container_runtime, e2e_image, output_base):
     output_dir = output_base / "cobblemon"
     _assert_basic_files(output_dir)
     _assert_mods_populated(output_dir)
+    _check_server_starts(container_runtime, output_dir, e2e_image, timeout=HEAVY_START_TIMEOUT)
 
 
 @pytest.mark.skipif(
@@ -281,6 +290,7 @@ def test_modpack_all_of_create(container_runtime, e2e_image, output_base):
     output_dir = output_base / "aoc"
     _assert_basic_files(output_dir)
     _assert_mods_populated(output_dir)
+    _check_server_starts(container_runtime, output_dir, e2e_image, timeout=HEAVY_START_TIMEOUT)
 
 
 # ── Pure server type tests ────────────────────────────────────────────────────
