@@ -100,8 +100,11 @@ class NeoForgeInstaller:
 
         return versions[-1]  # Maven lists oldest→newest; take last
 
-    def install(self, output_dir: Path) -> None:
-        """Download and run the NeoForge installer in *output_dir*."""
+    def install(self, output_dir: Path) -> Path:
+        """Download and run the NeoForge installer in *output_dir*.
+
+        Returns the path to ``run.sh`` created by the NeoForge installer.
+        """
         resolved = self._resolve_neoforge_version()
         log.info("Resolved NeoForge version: %s", resolved)
         url = _installer_url(self.minecraft_version, resolved)
@@ -119,3 +122,5 @@ class NeoForgeInstaller:
             )
         finally:
             installer_jar.unlink(missing_ok=True)
+
+        return output_dir / "run.sh"

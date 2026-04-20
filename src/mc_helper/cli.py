@@ -171,20 +171,18 @@ def _install_server_jar(config, output_dir: Path, dry_run: bool) -> Path | None:
         ).install(output_dir)
 
     elif server.type == "forge":
-        forge.ForgeInstaller(
+        jar_path = forge.ForgeInstaller(
             mc_version,
             forge_version=server.loader_version,
             session=session,
         ).install(output_dir)
-        jar_path = None  # forge --installServer creates its own run.sh
 
     elif server.type == "neoforge":
-        neoforge.NeoForgeInstaller(
+        jar_path = neoforge.NeoForgeInstaller(
             mc_version,
             neoforge_version=server.loader_version,
             session=session,
         ).install(output_dir)
-        jar_path = None  # neoforge --installServer creates its own run.sh
 
     elif server.type == "paper":
         jar_path = paper.PaperInstaller(mc_version, session=session).install(output_dir)
@@ -261,17 +259,15 @@ def _write_server_files(
     launch_path = output_dir / "launch.sh"
     mem = server.memory
     resolved_type = effective_type or server.type
-    if jar_path is not None:
-        jar_name = jar_path.name
+    if jar_path is not None and jar_path.suffix == ".sh":
+        launch_content = f'#!/bin/sh\nexec ./{jar_path.name} "$@"\n'
+    elif jar_path is not None:
         launch_content = (
-            f"#!/bin/sh\n" f'exec java -Xmx{mem} -Xms{mem} -jar {jar_name} nogui "$@"\n'
+            f"#!/bin/sh\n" f'exec java -Xmx{mem} -Xms{mem} -jar {jar_path.name} nogui "$@"\n'
         )
     elif resolved_type in ("forge", "neoforge"):
-        launch_content = (
-            "#!/bin/sh\n"
-            "# The Forge/NeoForge installer created run.sh — invoke it here.\n"
-            'exec ./run.sh "$@"\n'
-        )
+        # dry-run path: installer hasn't run yet, but we know what it creates
+        launch_content = '#!/bin/sh\nexec ./run.sh "$@"\n'
     else:
         launch_content = (
             f"#!/bin/sh\n" f'exec java -Xmx{mem} -Xms{mem} -jar server.jar nogui "$@"\n'
@@ -294,7 +290,7 @@ def _setup_server_pack(config, output_dir: Path, dry_run: bool) -> None:
 
     log.info("Installing server pack to %s...", output_dir)
     sp = config.serverpack
-    serverpack.ServerPackInstaller(
+    start_artifact = serverpack.ServerPackInstaller(
         url=sp.url,
         github=sp.github,
         tag=sp.tag,
@@ -304,7 +300,7 @@ def _setup_server_pack(config, output_dir: Path, dry_run: bool) -> None:
         disable_mods_patterns=sp.disable_mods,
         force_update=sp.force_update,
     ).install(output_dir)
-    _write_server_files(config, output_dir, None, dry_run)
+    _write_server_files(config, output_dir, start_artifact, dry_run)
     log.info("Server pack installed to %s", output_dir)
 
 

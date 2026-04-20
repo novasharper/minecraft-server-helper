@@ -127,6 +127,29 @@ def _sha1_file(path: Path) -> str:
     return h.hexdigest()
 
 
+# ── Start-artifact detection ──────────────────────────────────────────────────
+
+
+def _detect_start_artifact(output_dir: Path) -> Path | None:
+    """Return the best server start artifact found in *output_dir*, or ``None``.
+
+    Checks for known start scripts and jar naming conventions in priority
+    order so that packs that bundle their own launcher (GTNH ``ServerStart.sh``,
+    NeoForge ``run.sh``, Forge universal jars, etc.) are invoked correctly
+    instead of falling back to the generic ``server.jar`` name.
+    """
+    for script in ("run.sh", "ServerStart.sh", "start.sh", "startserver.sh"):
+        if (output_dir / script).exists():
+            return output_dir / script
+    forge_jars = sorted(output_dir.glob("forge-*.jar"))
+    if forge_jars:
+        return forge_jars[0]
+    mc_jars = sorted(output_dir.glob("minecraft_server.*.jar"))
+    if mc_jars:
+        return mc_jars[0]
+    return None
+
+
 # ── Installer class ───────────────────────────────────────────────────────────
 
 
@@ -165,8 +188,13 @@ class ServerPackInstaller:
             if token:
                 self.session.headers["Authorization"] = f"Bearer {token}"
 
-    def install(self, output_dir: Path) -> None:
-        """Download and extract the server pack into *output_dir*."""
+    def install(self, output_dir: Path) -> Path | None:
+        """Download and extract the server pack into *output_dir*.
+
+        Returns the detected server start artifact — a ``.sh`` script or a
+        ``.jar`` file — or ``None`` if no recognisable artifact was found
+        (callers should fall back to ``server.jar``).
+        """
         output_dir.mkdir(parents=True, exist_ok=True)
         manifest = Manifest(output_dir)
         manifest.load()
@@ -194,7 +222,7 @@ class ServerPackInstaller:
             sha1 = _sha1_file(tmp_archive)
             if not self.force_update and manifest.pack_sha1 == sha1:
                 log.info("Server pack SHA-1 unchanged — skipping extraction")
-                return
+                return _detect_start_artifact(output_dir)
 
             # 4. Extract into temp dir
             log.info("Extracting server pack...")
@@ -228,3 +256,5 @@ class ServerPackInstaller:
 
         finally:
             tmp_archive.unlink(missing_ok=True)
+
+        return _detect_start_artifact(output_dir)

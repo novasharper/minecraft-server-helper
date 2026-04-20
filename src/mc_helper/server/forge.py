@@ -107,8 +107,11 @@ class ForgeInstaller:
             f"Tried: {urls}"
         ) from last_exc
 
-    def install(self, output_dir: Path) -> None:
-        """Download and run the Forge installer in *output_dir*."""
+    def install(self, output_dir: Path) -> Path:
+        """Download and run the Forge installer in *output_dir*.
+
+        Returns the path to ``run.sh`` created by the Forge installer.
+        """
         resolved = self._resolve_forge_version()
         log.info("Resolved Forge version: %s", resolved)
         installer_jar = self._download_installer(output_dir, resolved)
@@ -125,3 +128,5 @@ class ForgeInstaller:
             # The Forge installer leaves a log file alongside the installer JAR
             log_file = installer_jar.with_suffix(installer_jar.suffix + ".log")
             log_file.unlink(missing_ok=True)
+
+        return output_dir / "run.sh"
