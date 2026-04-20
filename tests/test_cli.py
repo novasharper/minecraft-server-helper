@@ -1,6 +1,7 @@
 """Tests for cli.py — Phase 7: setup dispatch, server file writing, status command."""
 
 import json
+import logging
 import stat
 from pathlib import Path
 from unittest.mock import ANY, MagicMock, patch
@@ -148,13 +149,14 @@ class TestInstallServerJar:
 
         return load_config(cfg_file)
 
-    def test_dry_run_returns_none_and_prints(self, tmp_path, capsys):
+    def test_dry_run_returns_none_and_prints(self, tmp_path, caplog):
         from mc_helper.cli import _install_server_jar
 
         config = self._config(tmp_path, "vanilla")
-        result = _install_server_jar(config, tmp_path, dry_run=True)
+        with caplog.at_level(logging.INFO, logger="mc_helper.cli"):
+            result = _install_server_jar(config, tmp_path, dry_run=True)
         assert result is None
-        assert "[dry-run]" in capsys.readouterr().out
+        assert "[dry-run]" in caplog.text
 
     def test_vanilla_dispatches(self, tmp_path):
         from mc_helper.cli import _install_server_jar
@@ -244,17 +246,17 @@ class TestCmdStatus:
         args.config = str(cfg_path)
         return args
 
-    def test_no_manifest(self, tmp_path, capsys):
+    def test_no_manifest(self, tmp_path, caplog):
         data = _base_config()
         data["server"]["output_dir"] = str(tmp_path)
         cfg_file = _write_config(tmp_path, data)
         from mc_helper.cli import _cmd_status
 
-        _cmd_status(self._make_args(cfg_file))
-        out = capsys.readouterr().out
-        assert "not been set up" in out
+        with caplog.at_level(logging.INFO, logger="mc_helper.cli"):
+            _cmd_status(self._make_args(cfg_file))
+        assert "not been set up" in caplog.text
 
-    def test_manifest_displayed(self, tmp_path, capsys):
+    def test_manifest_displayed(self, tmp_path, caplog):
         data = _base_config()
         data["server"]["output_dir"] = str(tmp_path)
         cfg_file = _write_config(tmp_path, data)
@@ -271,14 +273,14 @@ class TestCmdStatus:
 
         from mc_helper.cli import _cmd_status
 
-        _cmd_status(self._make_args(cfg_file))
-        out = capsys.readouterr().out
-        assert "1.21.1" in out
-        assert "fabric" in out
-        assert "0.16.0" in out
-        assert "fabric-api-0.119.2.jar" in out
+        with caplog.at_level(logging.INFO, logger="mc_helper.cli"):
+            _cmd_status(self._make_args(cfg_file))
+        assert "1.21.1" in caplog.text
+        assert "fabric" in caplog.text
+        assert "0.16.0" in caplog.text
+        assert "fabric-api-0.119.2.jar" in caplog.text
 
-    def test_invalid_config_exits(self, tmp_path, capsys):
+    def test_invalid_config_exits(self, tmp_path):
         bad_cfg = tmp_path / "bad.yaml"
         bad_cfg.write_text("not: valid: config: at: all:\n")
         from mc_helper.cli import _cmd_status
@@ -312,7 +314,7 @@ class TestCmdSetupDispatch:
         # No real files created
         assert not (tmp_path / "eula.txt").exists()
 
-    def test_output_dir_override(self, tmp_path, capsys):
+    def test_output_dir_override(self, tmp_path):
         override_dir = tmp_path / "custom_output"
         data = _base_config("vanilla")
         data["server"]["output_dir"] = str(tmp_path / "default")
@@ -346,10 +348,10 @@ class TestCmdSetupDispatch:
         mock_extra.assert_called_once()
 
     def test_server_pack_with_extra_mods_calls_both(self, tmp_path):
-        """server_pack + mods: _setup_server_pack runs, then _install_extra_mods runs."""
+        """serverpack + mods: _setup_server_pack runs, then _install_extra_mods runs."""
         data = _base_config("fabric")
         data["server"]["output_dir"] = str(tmp_path)
-        data["server_pack"] = {"url": "https://example.com/pack.zip"}
+        data["serverpack"] = {"url": "https://example.com/pack.zip"}
         data["mods"] = {"modrinth": ["iris"]}
         cfg_file = _write_config(tmp_path, data)
         from mc_helper.cli import _cmd_setup
@@ -379,8 +381,8 @@ class TestCmdSetupDispatch:
 
         mock_extra.assert_not_called()
 
-    def test_extra_mods_dry_run(self, tmp_path, capsys):
-        """Dry-run with modpack + mods prints extra mods line without downloading."""
+    def test_extra_mods_dry_run(self, tmp_path, caplog):
+        """Dry-run with modpack + mods logs extra mods line without downloading."""
         data = _base_config("fabric")
         data["server"]["output_dir"] = str(tmp_path)
         data["modpack"] = {"platform": "modrinth", "project": "fabulously-optimized"}
@@ -388,10 +390,10 @@ class TestCmdSetupDispatch:
         cfg_file = _write_config(tmp_path, data)
         from mc_helper.cli import _cmd_setup
 
-        with patch("mc_helper.cli._setup_modpack"):
-            _cmd_setup(self._make_args(cfg_file, dry_run=True))
+        with caplog.at_level(logging.INFO, logger="mc_helper.cli"):
+            with patch("mc_helper.cli._setup_modpack"):
+                _cmd_setup(self._make_args(cfg_file, dry_run=True))
 
-        out = capsys.readouterr().out
-        assert "extra mod" in out
-        assert "2 Modrinth" in out
-        assert "1 extra mod" in out
+        assert "extra mod" in caplog.text
+        assert "2 Modrinth" in caplog.text
+        assert "1 extra mod" in caplog.text

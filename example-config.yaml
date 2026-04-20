@@ -1,5 +1,5 @@
 # example-config.yaml — annotated reference covering all three modes.
-# Exactly ONE of `modpack`, `mods`, or `server_pack` must be present.
+# Exactly ONE of `modpack`, `mods`, or `serverpack` must be present.
 
 server:
   type: fabric                  # vanilla | forge | neoforge | fabric | quilt | paper | purpur
@@ -55,7 +55,7 @@ modpack:
 #     - https://example.com/mymod-1.0.jar
 
 # ── Option C: Install a pre-assembled server pack ─────────────────────────────
-# server_pack:
+# serverpack:
 #   # Option C-1: direct URL
 #   url: https://example.com/mypack-server.zip
 #

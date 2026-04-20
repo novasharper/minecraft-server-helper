@@ -141,9 +141,9 @@ class ServerPackConfig(BaseModel):
     @model_validator(mode="after")
     def _check_source(self) -> "ServerPackConfig":
         if self.url and self.github:
-            raise ValueError("server_pack: only one of 'url' or 'github' may be set")
+            raise ValueError("serverpack: only one of 'url' or 'github' may be set")
         if not self.url and not self.github:
-            raise ValueError("server_pack: one of 'url' or 'github' must be set")
+            raise ValueError("serverpack: one of 'url' or 'github' must be set")
         return self
 
 
@@ -154,13 +154,13 @@ class RootConfig(BaseModel):
     server: ServerConfig
     modpack: Optional[ModpackConfig] = None
     mods: Optional[ModsConfig] = None
-    server_pack: Optional[ServerPackConfig] = None
+    serverpack: Optional[ServerPackConfig] = None
 
     @model_validator(mode="after")
     def _check_install_mode(self) -> "RootConfig":
-        if self.modpack and self.server_pack:
-            raise ValueError("modpack and server_pack cannot both be set")
-        if self.modpack is None and self.server_pack is None:
+        if self.modpack and self.serverpack:
+            raise ValueError("modpack and serverpack cannot both be set")
+        if self.modpack is None and self.serverpack is None:
             if self.server.type is None:
-                raise ValueError("server.type is required when not using modpack or server_pack")
+                raise ValueError("server.type is required when not using modpack or serverpack")
         return self

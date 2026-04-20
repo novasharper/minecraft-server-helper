@@ -33,7 +33,7 @@ This makes re-runs safe and fast.
 
 ### Server pack idempotency
 
-For `server_pack`, re-extraction is skipped when the SHA-1 of the downloaded archive matches `pack_sha1` in the manifest and `force_update` is `false`. The SHA-1 is written to the manifest after the first successful extraction.
+For `serverpack`, re-extraction is skipped when the SHA-1 of the downloaded archive matches `pack_sha1` in the manifest and `force_update` is `false`. The SHA-1 is written to the manifest after the first successful extraction.
 
 ---
 
@@ -53,13 +53,13 @@ CurseForge requests use a separate session with the `X-Api-Key` header injected.
 
 ## Parallel mod downloads
 
-In `mods` mode (standalone or as an overlay on top of `modpack`/`server_pack`), all Modrinth and CurseForge mod downloads are submitted to a `ThreadPoolExecutor` with a maximum of 10 concurrent workers. URL-based mods are downloaded sequentially after the pool finishes. Errors from individual mods are collected and reported at the end; a non-zero exit code is returned if any download failed.
+In `mods` mode (standalone or as an overlay on top of `modpack`/`serverpack`), all Modrinth and CurseForge mod downloads are submitted to a `ThreadPoolExecutor` with a maximum of 10 concurrent workers. URL-based mods are downloaded sequentially after the pool finishes. Errors from individual mods are collected and reported at the end; a non-zero exit code is returned if any download failed.
 
-When `mods` is combined with `modpack` or `server_pack`, the extra mod paths are appended to the manifest after the base installer saves it. This ensures that on the next run, the base pack's stale-file cleanup correctly removes them before they are re-installed.
+When `mods` is combined with `modpack` or `serverpack`, the extra mod paths are appended to the manifest after the base installer saves it. This ensures that on the next run, the base pack's stale-file cleanup correctly removes them before they are re-installed.
 
 ---
 
-## Archive extraction (`server_pack`)
+## Archive extraction (`serverpack`)
 
 Archive format is detected from the filename:
 

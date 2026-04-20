@@ -405,8 +405,8 @@ def test_passes_file_filter_filename_exclude():
 def test_install_skips_server_pack_files(tmp_path):
     """isServerPack=True files must be skipped when selecting the pack file."""
     mod_id = 555
-    server_pack = _make_mod_file(1000, "testpack-server.zip")
-    server_pack["isServerPack"] = True
+    serverpack = _make_mod_file(1000, "testpack-server.zip")
+    serverpack["isServerPack"] = True
     client_pack = _make_mod_file(1001, "testpack-client.zip")
     client_pack["isServerPack"] = False
     client_pack["downloadUrl"] = "https://edge.forgecdn.net/files/1/1/testpack-client.zip"
@@ -415,7 +415,7 @@ def test_install_skips_server_pack_files(tmp_path):
     rsps_lib.add(
         rsps_lib.GET,
         f"{_API}/v1/mods/{mod_id}/files",
-        json={"data": [server_pack, client_pack]},
+        json={"data": [serverpack, client_pack]},
     )
     rsps_lib.add(rsps_lib.GET, client_pack["downloadUrl"], body=pack_zip)
     _add_batch_slugs_mock()

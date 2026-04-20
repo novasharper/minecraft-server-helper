@@ -48,7 +48,7 @@ After a successful `setup` run, `output_dir` contains the server JAR (or extract
 
 ## Configuration
 
-A config file has one required `server` section and one or more optional install sections. `modpack` and `server_pack` are mutually exclusive base install modes; `mods` may be combined with either to add extra mods on top. Omitting all three installs only the server JAR.
+A config file has one required `server` section and one or more optional install sections. `modpack` and `serverpack` are mutually exclusive base install modes; `mods` may be combined with either to add extra mods on top. Omitting all three installs only the server JAR.
 
 ### Minimal example — Modrinth modpack
 
@@ -113,7 +113,7 @@ server:
   output_dir: ./server
   eula: true
 
-server_pack:
+serverpack:
   github: "ATM-Team/ATM-10"
   tag: LATEST
   asset: "*server*"
@@ -121,7 +121,7 @@ server_pack:
 
 ### Adding extra mods to a modpack or server pack
 
-`mods` can be combined with `modpack` or `server_pack` to layer additional mods on top of the base install:
+`mods` can be combined with `modpack` or `serverpack` to layer additional mods on top of the base install:
 
 ```yaml
 server:

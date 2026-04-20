@@ -2,7 +2,7 @@
 
 All behavior is driven by a single YAML config file. Pass it to every command with `--config <file>`.
 
-A config file has one required section (`server`) and optional install sections. `modpack` and `server_pack` are mutually exclusive base install modes. `mods` may appear alone **or** alongside `modpack`/`server_pack` to add extra mods on top of the base install. Setting both `modpack` and `server_pack` is an error.
+A config file has one required section (`server`) and optional install sections. `modpack` and `serverpack` are mutually exclusive base install modes. `mods` may appear alone **or** alongside `modpack`/`serverpack` to add extra mods on top of the base install. Setting both `modpack` and `serverpack` is an error.
 
 ---
 
@@ -27,8 +27,8 @@ server:
 
 | Field | Type | Default | Description |
 |---|---|---|---|
-| `type` | string | *(required unless `modpack`/`server_pack` is set)* | Server type. One of `vanilla`, `fabric`, `forge`, `neoforge`, `paper`, `purpur`. When `modpack` is used, this field acts as a loader hint for mod-compatibility filtering; the actual loader is read from the pack metadata. |
-| `minecraft_version` | string | `LATEST` | Minecraft version, e.g. `1.21.1`, `LATEST`, or `SNAPSHOT`. Not used when `modpack` or `server_pack` is set — the version comes from the pack. |
+| `type` | string | *(required unless `modpack`/`serverpack` is set)* | Server type. One of `vanilla`, `fabric`, `forge`, `neoforge`, `paper`, `purpur`. When `modpack` is used, this field acts as a loader hint for mod-compatibility filtering; the actual loader is read from the pack metadata. |
+| `minecraft_version` | string | `LATEST` | Minecraft version, e.g. `1.21.1`, `LATEST`, or `SNAPSHOT`. Not used when `modpack` or `serverpack` is set — the version comes from the pack. |
 | `loader_version` | string | `LATEST` | Loader version for `fabric`, `forge`, or `neoforge`. Ignored for `vanilla`, `paper`, `purpur`. |
 | `output_dir` | path | `./server` | Directory where server files are installed. Created if it does not exist. |
 | `eula` | bool | `false` | Set to `true` to agree to the Minecraft EULA. Written to `eula.txt`. |
@@ -47,12 +47,12 @@ The valid combinations are:
 |---|---|
 | *(none)* | Server JAR only (vanilla/loader-only). |
 | `modpack` | Full modpack install (mods + overrides + server JAR). |
-| `server_pack` | Extract pre-assembled archive into `output_dir`. |
+| `serverpack` | Extract pre-assembled archive into `output_dir`. |
 | `mods` | Individual mods + server JAR. |
 | `modpack` + `mods` | Modpack install, then extra mods layered on top. |
-| `server_pack` + `mods` | Server pack extract, then extra mods layered on top. |
+| `serverpack` + `mods` | Server pack extract, then extra mods layered on top. |
 
-`modpack` and `server_pack` cannot be set at the same time.
+`modpack` and `serverpack` cannot be set at the same time.
 
 ---
 
@@ -164,9 +164,9 @@ A list of direct download URLs. The filename is taken from the last path segment
 
 Mod downloads from Modrinth and CurseForge run in parallel (up to 10 concurrent workers).
 
-### Using `mods` with `modpack` or `server_pack`
+### Using `mods` with `modpack` or `serverpack`
 
-When `mods` is combined with `modpack` or `server_pack`, the base pack installs first and then the extra mods are downloaded into `<output_dir>/mods/`. The Minecraft version and loader are read from the manifest written by the base installer — `server.minecraft_version` is not used.
+When `mods` is combined with `modpack` or `serverpack`, the base pack installs first and then the extra mods are downloaded into `<output_dir>/mods/`. The Minecraft version and loader are read from the manifest written by the base installer — `server.minecraft_version` is not used.
 
 ```yaml
 server:
@@ -190,12 +190,12 @@ On re-run: the modpack installer's stale-file cleanup removes the extra mods (th
 
 ---
 
-## `server_pack`
+## `serverpack`
 
 Extracts a pre-assembled server archive (ZIP, tar.gz, tgz, or tar.bz2) into `output_dir`. The archive can come from a direct URL or a GitHub release asset.
 
 ```yaml
-server_pack:
+serverpack:
   github: "ATM-Team/ATM-10"
   tag: LATEST
   asset: "*server*"
@@ -210,7 +210,7 @@ Exactly one of `url` or `github` must be set.
 ### Source: direct URL
 
 ```yaml
-server_pack:
+serverpack:
   url: https://example.com/mypack-server.zip
 ```
 
@@ -221,7 +221,7 @@ server_pack:
 ### Source: GitHub release
 
 ```yaml
-server_pack:
+serverpack:
   github: "owner/repo"
   tag: LATEST
   asset: "*server*"

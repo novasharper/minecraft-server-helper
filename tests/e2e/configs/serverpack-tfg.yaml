@@ -4,7 +4,7 @@ server:
   eula: true
   memory: 2G
 
-server_pack:
+serverpack:
   github: TerraFirmaGreg-Team/Modpack-Modern
   tag: 0.11.28
   asset: "*serverpack*"

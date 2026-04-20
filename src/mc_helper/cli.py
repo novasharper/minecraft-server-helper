@@ -12,9 +12,9 @@ from mc_helper.manifest import Manifest
 from mc_helper.modpack import curseforge as modpack_cf
 from mc_helper.modpack import ftb as modpack_ftb
 from mc_helper.modpack import modrinth as modpack_mr
+from mc_helper.modpack import serverpack
 from mc_helper.mods import curseforge as cf_mods
 from mc_helper.mods import modrinth as mr_mods
-from mc_helper.modpack import server_pack
 from mc_helper.server import fabric, forge, neoforge, paper, purpur, vanilla
 from mc_helper.server.vanilla import resolve_version
 
@@ -110,7 +110,7 @@ def _cmd_setup(args: argparse.Namespace) -> None:
     if dry_run:
         log.info("[dry-run] No files will be downloaded or written.")
 
-    if config.server_pack:
+    if config.serverpack:
         _setup_server_pack(config, output_dir, dry_run)
     elif config.modpack:
         _setup_modpack(config, output_dir, dry_run)
@@ -125,7 +125,7 @@ def _cmd_setup(args: argparse.Namespace) -> None:
             log.info("Server installed to %s", output_dir)
         return
 
-    # Extra mods layered on top of server_pack or modpack
+    # Extra mods layered on top of serverpack or modpack
     if config.mods:
         _install_extra_mods(config, output_dir, dry_run)
 
@@ -293,8 +293,8 @@ def _setup_server_pack(config, output_dir: Path, dry_run: bool) -> None:
         return
 
     log.info("Installing server pack to %s...", output_dir)
-    sp = config.server_pack
-    server_pack.ServerPackInstaller(
+    sp = config.serverpack
+    serverpack.ServerPackInstaller(
         url=sp.url,
         github=sp.github,
         tag=sp.tag,

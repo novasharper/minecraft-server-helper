@@ -4,5 +4,5 @@ server:
   eula: true
   memory: 4G
 
-server_pack:
+serverpack:
   url: https://downloads.gtnewhorizons.com/ServerPacks/GT_New_Horizons_2.8.4_Server_Java_17-25.zip

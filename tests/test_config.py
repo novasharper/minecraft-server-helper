@@ -69,7 +69,7 @@ def test_server_type_optional_with_modpack():
 
 
 def test_server_type_optional_with_server_pack():
-    data = {"server": {"eula": True}, "server_pack": {"url": "https://example.com/pack.zip"}}
+    data = {"server": {"eula": True}, "serverpack": {"url": "https://example.com/pack.zip"}}
     cfg = RootConfig.model_validate(data)
     assert cfg.server.type is None
 
@@ -93,7 +93,7 @@ def test_no_content_sections_ok():
     cfg = RootConfig.model_validate(_minimal_data())
     assert cfg.modpack is None
     assert cfg.mods is None
-    assert cfg.server_pack is None
+    assert cfg.serverpack is None
 
 
 def test_modpack_and_mods_allowed():
@@ -109,7 +109,7 @@ def test_modpack_and_mods_allowed():
 def test_modpack_and_server_pack_raises():
     data = _minimal_data(
         modpack={"platform": "modrinth", "project": "fabric-api"},
-        server_pack={"url": "https://example.com/pack.zip"},
+        serverpack={"url": "https://example.com/pack.zip"},
     )
     with pytest.raises(ValidationError, match="modpack"):
         RootConfig.model_validate(data)
@@ -118,11 +118,11 @@ def test_modpack_and_server_pack_raises():
 def test_mods_and_server_pack_allowed():
     data = _minimal_data(
         mods={"modrinth": ["fabric-api"]},
-        server_pack={"url": "https://example.com/pack.zip"},
+        serverpack={"url": "https://example.com/pack.zip"},
     )
     cfg = RootConfig.model_validate(data)
     assert cfg.mods is not None
-    assert cfg.server_pack is not None
+    assert cfg.serverpack is not None
 
 
 # ── ModpackConfig ─────────────────────────────────────────────────────────────
@@ -194,30 +194,30 @@ def test_mods_curseforge():
 
 
 def test_server_pack_direct_url():
-    data = _minimal_data(server_pack={"url": "https://example.com/pack.zip"})
+    data = _minimal_data(serverpack={"url": "https://example.com/pack.zip"})
     cfg = RootConfig.model_validate(data)
-    assert cfg.server_pack.url == "https://example.com/pack.zip"
-    assert cfg.server_pack.strip_components == 0
-    assert cfg.server_pack.force_update is False
+    assert cfg.serverpack.url == "https://example.com/pack.zip"
+    assert cfg.serverpack.strip_components == 0
+    assert cfg.serverpack.force_update is False
 
 
 def test_server_pack_github():
-    data = _minimal_data(server_pack={"github": "ATM-Team/ATM-10", "tag": "v10.0"})
+    data = _minimal_data(serverpack={"github": "ATM-Team/ATM-10", "tag": "v10.0"})
     cfg = RootConfig.model_validate(data)
-    assert cfg.server_pack.github == "ATM-Team/ATM-10"
-    assert cfg.server_pack.tag == "v10.0"
+    assert cfg.serverpack.github == "ATM-Team/ATM-10"
+    assert cfg.serverpack.tag == "v10.0"
 
 
 def test_server_pack_both_url_and_github_raises():
     data = _minimal_data(
-        server_pack={"url": "https://example.com/pack.zip", "github": "owner/repo"}
+        serverpack={"url": "https://example.com/pack.zip", "github": "owner/repo"}
     )
     with pytest.raises(ValidationError, match="only one"):
         RootConfig.model_validate(data)
 
 
 def test_server_pack_neither_raises():
-    data = _minimal_data(server_pack={"tag": "LATEST"})
+    data = _minimal_data(serverpack={"tag": "LATEST"})
     with pytest.raises(ValidationError, match="one of"):
         RootConfig.model_validate(data)
 

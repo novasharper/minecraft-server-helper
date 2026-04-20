@@ -1,4 +1,4 @@
-"""Tests for pack/server_pack.py."""
+"""Tests for pack/serverpack.py."""
 
 import hashlib
 import tarfile
@@ -9,7 +9,7 @@ import pytest
 import responses as rsps_lib
 
 from mc_helper.http_client import build_session
-from mc_helper.modpack.server_pack import (
+from mc_helper.modpack.serverpack import (
     ServerPackInstaller,
     _extract_tar,
     _extract_zip,

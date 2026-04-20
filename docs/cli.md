@@ -31,7 +31,7 @@ mc-helper setup --config config.yaml
 
 1. Validates the config.
 2. Dispatches to the appropriate installer:
-   - `server_pack` → extracts a pre-assembled server archive.
+   - `serverpack` → extracts a pre-assembled server archive.
    - `modpack` → downloads and installs the modpack (and its embedded server JAR).
    - `mods` → installs individual mods in parallel, then installs the server JAR.
    - *(none)* → installs the server JAR only.
