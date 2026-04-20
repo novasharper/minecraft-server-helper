@@ -15,7 +15,6 @@ Or directly with poetry (requires podman or docker):
 
 import os
 import shutil
-import socket
 import subprocess
 import sys  # for stderr output only
 import tempfile
@@ -146,7 +145,6 @@ def _assert_basic_files(output_dir: Path) -> None:
     assert output_dir.exists(), f"output_dir does not exist: {output_dir}"
     assert (output_dir / "eula.txt").exists(), "eula.txt missing"
     assert "eula=true" in (output_dir / "eula.txt").read_text()
-    assert (output_dir / "server.properties").exists() or True  # only written if properties set
     assert (output_dir / "launch.sh").exists(), "launch.sh missing"
     assert (output_dir / ".mc-helper-manifest.json").exists(), "manifest missing"
 
@@ -171,18 +169,12 @@ def _check_server_starts(
     # world data, logs, etc. (VirtioFS on macOS presents bind-mounts as root:nobody)
     output_dir.chmod(0o777)
 
-    # Verify port 25565 is not already in use on the host
-    with socket.socket() as probe:
-        if probe.connect_ex(("127.0.0.1", 25565)) == 0:
-            pytest.skip("port 25565 already in use on host — cannot run server startup check")
-
     container_name = f"mc-helper-e2e-srv-{output_dir.name}"
     cmd = [
         container_runtime,
         "run",
         "--rm",
         "--name", container_name,
-        "-p", "25565:25565",
         "-v", f"{output_dir}:/server",
         "-w", "/server",
         e2e_image,
@@ -193,11 +185,19 @@ def _check_server_starts(
     try:
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
-            try:
-                with socket.create_connection(("127.0.0.1", 25565), timeout=2):
-                    return  # port open — server is ready
-            except OSError:
-                pass
+            # Check from inside the container to avoid host port-mapping issues
+            # (Podman on macOS routes through a VM, making 127.0.0.1 unreliable)
+            check = subprocess.run(
+                [
+                    container_runtime, "exec", container_name,
+                    "python3", "-c",
+                    "import socket,sys; s=socket.socket(); s.settimeout(1);"
+                    " sys.exit(0 if s.connect_ex(('127.0.0.1',25565))==0 else 1)",
+                ],
+                capture_output=True,
+            )
+            if check.returncode == 0:
+                return  # port open inside container — server is ready
             if proc.poll() is not None:
                 stdout, stderr = proc.communicate()
                 pytest.fail(
