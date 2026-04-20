@@ -181,32 +181,37 @@ def _check_server_starts(
         "/server/launch.sh",
     ]
 
-    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    # Use DEVNULL — container output is still captured by the runtime's log
+    # buffer and retrieved below via `logs` subcommand.
+    proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     try:
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
-            # Check from inside the container to avoid host port-mapping issues
-            # (Podman on macOS routes through a VM, making 127.0.0.1 unreliable)
-            check = subprocess.run(
-                [
-                    container_runtime, "exec", container_name,
-                    "python3", "-c",
-                    "import socket,sys; s=socket.socket(); s.settimeout(1);"
-                    " sys.exit(0 if s.connect_ex(('127.0.0.1',25565))==0 else 1)",
-                ],
+            logs = subprocess.run(
+                [container_runtime, "logs", container_name],
                 capture_output=True,
+                text=True,
             )
-            if check.returncode == 0:
-                return  # port open inside container — server is ready
+            combined = logs.stdout + logs.stderr
+            # "Done (Xs)! For help, type "help"" is emitted by all server
+            # types after port bind AND spawn chunk generation are complete.
+            if "Done (" in combined:
+                return
             if proc.poll() is not None:
-                stdout, stderr = proc.communicate()
                 pytest.fail(
                     f"Server process exited early (rc={proc.returncode}).\n"
-                    f"STDOUT:\n{stdout.decode(errors='replace')}\n"
-                    f"STDERR:\n{stderr.decode(errors='replace')}"
+                    f"Server output:\n{combined}"
                 )
             time.sleep(3)
-        pytest.fail(f"Server port 25565 did not open within {timeout}s")
+        logs = subprocess.run(
+            [container_runtime, "logs", container_name],
+            capture_output=True,
+            text=True,
+        )
+        pytest.fail(
+            f"Server did not finish starting within {timeout}s.\n"
+            f"Server output:\n{logs.stdout + logs.stderr}"
+        )
     finally:
         subprocess.run(
             [container_runtime, "stop", container_name],
