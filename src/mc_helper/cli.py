@@ -119,8 +119,8 @@ def _cmd_setup(args: argparse.Namespace) -> None:
         return
     else:
         # Vanilla / loader-only: install server JAR, then write config files
-        jar_path = _install_server_jar(config, output_dir, dry_run)
-        _write_server_files(config, output_dir, jar_path, dry_run)
+        start_artifact = _install_server_jar(config, output_dir, dry_run)
+        _write_server_files(config, output_dir, start_artifact, dry_run)
         if not dry_run:
             log.info("Server installed to %s", output_dir)
         return
@@ -161,34 +161,34 @@ def _install_server_jar(config, output_dir: Path, dry_run: bool) -> Path | None:
     log.info("Installing %s %s server...", server.type, mc_version)
 
     if server.type == "vanilla":
-        jar_path = vanilla.VanillaInstaller(mc_version, session=session).install(output_dir)
+        start_artifact = vanilla.VanillaInstaller(mc_version, session=session).install(output_dir)
 
     elif server.type == "fabric":
-        jar_path = fabric.FabricInstaller(
+        start_artifact = fabric.FabricInstaller(
             mc_version,
             loader_version=server.loader_version,
             session=session,
         ).install(output_dir)
 
     elif server.type == "forge":
-        jar_path = forge.ForgeInstaller(
+        start_artifact = forge.ForgeInstaller(
             mc_version,
             forge_version=server.loader_version,
             session=session,
         ).install(output_dir)
 
     elif server.type == "neoforge":
-        jar_path = neoforge.NeoForgeInstaller(
+        start_artifact = neoforge.NeoForgeInstaller(
             mc_version,
             neoforge_version=server.loader_version,
             session=session,
         ).install(output_dir)
 
     elif server.type == "paper":
-        jar_path = paper.PaperInstaller(mc_version, session=session).install(output_dir)
+        start_artifact = paper.PaperInstaller(mc_version, session=session).install(output_dir)
 
     elif server.type == "purpur":
-        jar_path = purpur.PurpurInstaller(mc_version, session=session).install(output_dir)
+        start_artifact = purpur.PurpurInstaller(mc_version, session=session).install(output_dir)
 
     else:
         raise ValueError(f"Unknown or unsupported server type: {server.type!r}")
@@ -199,15 +199,15 @@ def _install_server_jar(config, output_dir: Path, dry_run: bool) -> Path | None:
     manifest.loader_type = server.type
     if server.type not in ("vanilla", "paper", "purpur"):
         manifest.loader_version = server.loader_version
-    if jar_path is not None:
-        manifest.add_file(jar_path.relative_to(output_dir))
+    if start_artifact is not None:
+        manifest.add_file(start_artifact.relative_to(output_dir))
     manifest.save()
 
-    return jar_path
+    return start_artifact
 
 
 def _write_server_files(
-    config, output_dir: Path, jar_path: Path | None, dry_run: bool, effective_type: str | None = None
+    config, output_dir: Path, start_artifact: Path | None, dry_run: bool, effective_type: str | None = None
 ) -> None:
     """Write eula.txt, server.properties, and launch.sh into output_dir."""
     log.info("Writing server files to %s...", output_dir)
@@ -258,19 +258,14 @@ def _write_server_files(
     # launch.sh
     launch_path = output_dir / "launch.sh"
     mem = server.memory
-    resolved_type = effective_type or server.type
-    if jar_path is not None and jar_path.suffix == ".sh":
-        launch_content = f'#!/bin/sh\nexec ./{jar_path.name} "$@"\n'
-    elif jar_path is not None:
-        launch_content = (
-            f"#!/bin/sh\n" f'exec java -Xmx{mem} -Xms{mem} -jar {jar_path.name} nogui "$@"\n'
-        )
-    elif resolved_type in ("forge", "neoforge"):
-        # dry-run path: installer hasn't run yet, but we know what it creates
-        launch_content = '#!/bin/sh\nexec ./run.sh "$@"\n'
+    if dry_run:
+        start_artifact = output_dir / "dry-run.jar"
+
+    if start_artifact.suffix == ".sh":
+        launch_content = f'#!/bin/sh\nexec ./{start_artifact.name} "$@"\n'
     else:
         launch_content = (
-            f"#!/bin/sh\n" f'exec java -Xmx{mem} -Xms{mem} -jar server.jar nogui "$@"\n'
+            f"#!/bin/sh\n" f'exec java -Xmx{mem} -Xms{mem} -jar {start_artifact.name} nogui "$@"\n'
         )
 
     if dry_run:
@@ -360,14 +355,14 @@ def _setup_modpack(config, output_dir: Path, dry_run: bool) -> None:
     # Install server JAR using loader info the modpack installer saved to manifest
     manifest = Manifest(output_dir)
     manifest.load()
-    jar_path: Path | None = None
+    start_artifact: Path | None = None
     loader_type = manifest.loader_type
     mc_version = manifest.mc_version
     loader_version = manifest.loader_version
 
     log.info("Installing %s %s server JAR...", loader_type or "vanilla", mc_version)
     if loader_type == "fabric":
-        jar_path = fabric.FabricInstaller(
+        start_artifact = fabric.FabricInstaller(
             mc_version, loader_version=loader_version, session=session
         ).install(output_dir)
     elif loader_type == "forge":
@@ -381,15 +376,15 @@ def _setup_modpack(config, output_dir: Path, dry_run: bool) -> None:
     elif loader_type == "quilt":
         raise NotImplementedError("Quilt server installation is not supported")
     elif loader_type in (None, "vanilla"):
-        jar_path = vanilla.VanillaInstaller(mc_version, session=session).install(output_dir)
+        start_artifact = vanilla.VanillaInstaller(mc_version, session=session).install(output_dir)
     elif loader_type == "paper":
-        jar_path = paper.PaperInstaller(mc_version, session=session).install(output_dir)
+        start_artifact = paper.PaperInstaller(mc_version, session=session).install(output_dir)
     elif loader_type == "purpur":
-        jar_path = purpur.PurpurInstaller(mc_version, session=session).install(output_dir)
+        start_artifact = purpur.PurpurInstaller(mc_version, session=session).install(output_dir)
     else:
         raise ValueError(f"Unknown loader type from modpack manifest: {loader_type!r}")
 
-    _write_server_files(config, output_dir, jar_path, dry_run, effective_type=loader_type)
+    _write_server_files(config, output_dir, start_artifact, dry_run, effective_type=loader_type)
     log.info("Modpack installed to %s", output_dir)
 
 
@@ -464,8 +459,8 @@ def _setup_mods(config, output_dir: Path, dry_run: bool) -> None:
             "[dry-run] Would install %d Modrinth + %d CurseForge + %d URL mod(s) to %s/mods/",
             mr_count, cf_count, url_count, output_dir,
         )
-        jar_path = _install_server_jar(config, output_dir, dry_run)
-        _write_server_files(config, output_dir, jar_path, dry_run)
+        start_artifact = _install_server_jar(config, output_dir, dry_run)
+        _write_server_files(config, output_dir, start_artifact, dry_run)
         return
 
     loader = (
@@ -486,8 +481,8 @@ def _setup_mods(config, output_dir: Path, dry_run: bool) -> None:
     log.info("%d mod(s) installed to %s/mods/", len(installed), output_dir)
 
     # Install server JAR and write config files
-    jar_path = _install_server_jar(config, output_dir, dry_run)
-    _write_server_files(config, output_dir, jar_path, dry_run)
+    start_artifact = _install_server_jar(config, output_dir, dry_run)
+    _write_server_files(config, output_dir, start_artifact, dry_run)
 
 
 def _install_extra_mods(config, output_dir: Path, dry_run: bool) -> None:
