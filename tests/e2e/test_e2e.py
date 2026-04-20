@@ -176,7 +176,8 @@ def _check_server_starts(
     cmd = [
         container_runtime,
         "run",
-        "--rm",
+        # No --rm: keep the container after exit so its logs remain accessible
+        # even if the server crashes immediately before the first `logs` poll.
         "--name", container_name,
         "-v", f"{output_dir}:/server",
         "-w", "/server",
@@ -201,9 +202,15 @@ def _check_server_starts(
             if "Done (" in combined:
                 return
             if proc.poll() is not None:
+                # Re-fetch logs now that the container has fully flushed output
+                logs = subprocess.run(
+                    [container_runtime, "logs", container_name],
+                    capture_output=True,
+                    text=True,
+                )
                 pytest.fail(
                     f"Server process exited early (rc={proc.returncode}).\n"
-                    f"Server output:\n{combined}"
+                    f"Server output:\n{logs.stdout + logs.stderr}"
                 )
             time.sleep(3)
         logs = subprocess.run(
@@ -216,8 +223,9 @@ def _check_server_starts(
             f"Server output:\n{logs.stdout + logs.stderr}"
         )
     finally:
+        # rm -f stops (if still running) and removes the container in one step
         subprocess.run(
-            [container_runtime, "stop", container_name],
+            [container_runtime, "rm", "-f", container_name],
             capture_output=True,
             timeout=30,
         )
