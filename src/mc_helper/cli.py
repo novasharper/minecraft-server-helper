@@ -271,23 +271,7 @@ def _write_server_files(
         )
 
     plan = launcher.detect_launch_plan(output_dir, start_artifact)
-    launcher.apply_launch_plan(
-        plan,
-        output_dir,
-        memory=server.memory,
-        jvm_args=server.jvm_args,
-        server_args=server.server_args,
-        java_bin=server.java_bin,
-        dry_run=dry_run,
-        use_aikar_flags=server.use_aikar_flags,
-        use_meowice_flags=server.use_meowice_flags,
-        use_meowice_graalvm_flags=server.use_meowice_graalvm_flags,
-        use_flare_flags=server.use_flare_flags,
-        use_simd_flags=server.use_simd_flags,
-        jvm_xx_opts=server.jvm_xx_opts,
-        jvm_opts=server.jvm_opts,
-        jvm_dd_opts=server.jvm_dd_opts,
-    )
+    launcher.apply_launch_plan(plan, server, output_dir, dry_run=dry_run)
 
 
 def _setup_modpack(config, output_dir: Path, dry_run: bool) -> None:

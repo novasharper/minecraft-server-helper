@@ -14,6 +14,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 
+from .config import ServerConfig
+
 log = logging.getLogger(__name__)
 
 LaunchKind = Literal["jar", "run_sh", "cf_script", "bare_script"]
@@ -71,41 +73,35 @@ def detect_launch_plan(output_dir: Path, start_artifact: Path) -> LaunchPlan:
 
 def apply_launch_plan(
     plan: LaunchPlan,
+    server_config: ServerConfig,
     output_dir: Path,
-    memory: str,
-    jvm_args: list[str],
-    server_args: list[str],
-    java_bin: str,
     dry_run: bool,
-    *,
-    use_aikar_flags: bool = False,
-    use_meowice_flags: bool = False,
-    use_meowice_graalvm_flags: bool = False,
-    use_flare_flags: bool = False,
-    use_simd_flags: bool = False,
-    jvm_xx_opts: list[str] | tuple[()] = (),
-    jvm_opts: list[str] | tuple[()] = (),
-    jvm_dd_opts: dict[str, str] | None = None,
 ) -> None:
     """Write/patch launch configuration files according to *plan*."""
     auto = _build_auto_jvm_args(
         plan,
-        memory,
-        java_bin,
-        use_aikar_flags,
-        use_meowice_flags,
-        use_meowice_graalvm_flags,
-        use_flare_flags,
-        use_simd_flags,
+        server.memory,
+        server.java_bin,
+        server.use_aikar_flags,
+        server.use_meowice_flags,
+        server.use_meowice_graalvm_flags,
+        server.use_flare_flags,
+        server.use_simd_flags,
     )
-    expanded_dd = [f"-D{k}={v}" for k, v in (jvm_dd_opts or {}).items()]
+    expanded_dd = [f"-D{k}={v}" for k, v in (server.jvm_dd_opts or {}).items()]
     # Assembly order mirrors Docker: auto → user jvm_xx_opts → user jvm_opts → DD opts → jvm_args
-    effective_jvm_args = auto + list(jvm_xx_opts) + list(jvm_opts) + expanded_dd + list(jvm_args)
+    effective_jvm_args = (
+        auto
+        + list(server.jvm_xx_opts)
+        + list(server.jvm_opts)
+        + expanded_dd
+        + list(server.jvm_args)
+    )
 
     if plan.kind == "run_sh":
-        _apply_run_sh(plan, output_dir, memory, effective_jvm_args, dry_run)
+        _apply_run_sh(plan, output_dir, server.memory, effective_jvm_args, dry_run)
     elif plan.kind == "cf_script":
-        _apply_cf_script(plan, output_dir, memory, effective_jvm_args, dry_run)
+        _apply_cf_script(plan, output_dir, server.memory, effective_jvm_args, dry_run)
     elif plan.kind == "bare_script":
         if effective_jvm_args:
             log.warning(
@@ -118,10 +114,10 @@ def apply_launch_plan(
         _write_jar_launch_sh(
             output_dir / "launch.sh",
             plan.start_artifact,
-            memory,
+            server.memory,
             effective_jvm_args,
-            server_args,
-            java_bin,
+            server.server_args,
+            server.java_bin,
             dry_run,
         )
 
