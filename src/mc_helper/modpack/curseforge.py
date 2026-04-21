@@ -198,9 +198,7 @@ class CurseForgePackInstaller:
                     f"CurseForge mod {mod_id}"
                 )
         if not files:
-            raise ValueError(
-                f"No non-server-pack files found for CurseForge mod {mod_id}"
-            )
+            raise ValueError(f"No non-server-pack files found for CurseForge mod {mod_id}")
         return files[0]
 
     def _get_mod_file(self, project_id: int, file_id: int) -> dict:
@@ -272,9 +270,7 @@ class CurseForgePackInstaller:
                 global_excluded_slugs: set[str] = set(cf_filter.get("globalExcludes", []))
                 global_excluded_slugs.update(modpack_overrides.get("excludes", []))
 
-                global_force_include_slugs: set[str] = set(
-                    cf_filter.get("globalForceIncludes", [])
-                )
+                global_force_include_slugs: set[str] = set(cf_filter.get("globalForceIncludes", []))
                 global_force_include_slugs.update(modpack_overrides.get("forceIncludes", []))
 
                 # Batch-resolve slugs for all candidate project IDs
@@ -283,7 +279,8 @@ class CurseForgePackInstaller:
 
                 log.info(
                     "Downloading %d mod file(s) (%d skipped as optional/excluded)...",
-                    len(filtered_refs), len(file_refs) - len(filtered_refs),
+                    len(filtered_refs),
+                    len(file_refs) - len(filtered_refs),
                 )
                 # 3. Download each mod file in parallel
                 new_files: list[str] = []

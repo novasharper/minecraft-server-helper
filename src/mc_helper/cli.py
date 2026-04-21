@@ -11,6 +11,7 @@ from mc_helper.manifest import Manifest
 from mc_helper.modpack import curseforge as modpack_cf
 from mc_helper.modpack import custom as modpack_custom
 from mc_helper.modpack import ftb as modpack_ftb
+from mc_helper.modpack import gtnh as modpack_gtnh
 from mc_helper.modpack import modrinth as modpack_mr
 from mc_helper.mods import curseforge as cf_mods
 from mc_helper.mods import modrinth as mr_mods
@@ -68,7 +69,8 @@ def main() -> None:
     )
 
     parser.add_argument(
-        "-v", "--verbose",
+        "-v",
+        "--verbose",
         action="store_true",
         help="Enable debug-level logging.",
     )
@@ -154,7 +156,9 @@ def _install_server_jar(config, output_dir: Path, dry_run: bool) -> Path | None:
     if dry_run:
         log.info(
             "[dry-run] Would install %s %s server to %s",
-            server.type, server.minecraft_version, output_dir,
+            server.type,
+            server.minecraft_version,
+            output_dir,
         )
         return None
 
@@ -275,6 +279,14 @@ def _write_server_files(
         server_args=server.server_args,
         java_bin=server.java_bin,
         dry_run=dry_run,
+        use_aikar_flags=server.use_aikar_flags,
+        use_meowice_flags=server.use_meowice_flags,
+        use_meowice_graalvm_flags=server.use_meowice_graalvm_flags,
+        use_flare_flags=server.use_flare_flags,
+        use_simd_flags=server.use_simd_flags,
+        jvm_xx_opts=server.jvm_xx_opts,
+        jvm_opts=server.jvm_opts,
+        jvm_dd_opts=server.jvm_dd_opts,
     )
 
 
@@ -306,6 +318,16 @@ def _setup_modpack(config, output_dir: Path, dry_run: bool) -> None:
         ).install(output_dir)
         _write_server_files(config, output_dir, start_artifact, dry_run)
         log.info("Server pack installed to %s", output_dir)
+        return
+
+    if mp.platform == "gtnh":
+        start_artifact = modpack_gtnh.GTNHPackInstaller(
+            version=src.version,
+            java_bin=config.server.java_bin,
+            session=session,
+        ).install(output_dir)
+        _write_server_files(config, output_dir, start_artifact, dry_run)
+        log.info("GTNH pack installed to %s", output_dir)
         return
 
     loader = (
@@ -380,6 +402,8 @@ def _setup_modpack(config, output_dir: Path, dry_run: bool) -> None:
         start_artifact = neoforge.NeoForgeInstaller(
             mc_version, neoforge_version=loader_version, session=session
         ).install(output_dir)
+    elif loader_type == "gtnh":
+        raise RuntimeError("GTNH packs install their own server JAR; use 'platform: gtnh' directly")
     elif loader_type == "quilt":
         raise NotImplementedError("Quilt server installation is not supported")
     elif loader_type in (None, "vanilla"):
@@ -408,7 +432,7 @@ def _download_mods(
 
     cf = mods_cfg.curseforge
     cf_session = build_session(extra_headers={"X-Api-Key": cf.api_key}) if cf else None
-    for spec in (cf.files if cf else []):
+    for spec in cf.files if cf else []:
         tasks.append(("curseforge", spec))
 
     def _run(kind: str, spec: str) -> str:
@@ -464,7 +488,10 @@ def _setup_mods(config, output_dir: Path, dry_run: bool) -> None:
         url_count = len(mods_cfg.urls or [])
         log.info(
             "[dry-run] Would install %d Modrinth + %d CurseForge + %d URL mod(s) to %s/mods/",
-            mr_count, cf_count, url_count, output_dir,
+            mr_count,
+            cf_count,
+            url_count,
+            output_dir,
         )
         start_artifact = _install_server_jar(config, output_dir, dry_run)
         _write_server_files(config, output_dir, start_artifact, dry_run)
@@ -501,7 +528,10 @@ def _install_extra_mods(config, output_dir: Path, dry_run: bool) -> None:
         url_count = len(mods_cfg.urls or [])
         log.info(
             "[dry-run] Would install %d Modrinth + %d CurseForge + %d extra mod(s) to %s/mods/",
-            mr_count, cf_count, url_count, output_dir,
+            mr_count,
+            cf_count,
+            url_count,
+            output_dir,
         )
         return
 

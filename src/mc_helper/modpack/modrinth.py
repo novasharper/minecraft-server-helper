@@ -203,7 +203,8 @@ class ModrinthPackInstaller:
         )
         log.info(
             "Resolved Modrinth version: %s (%s)",
-            version.get("version_number"), version.get("id"),
+            version.get("version_number"),
+            version.get("id"),
         )
         mrpack_url = _mrpack_url(version)
         log.debug("Downloading .mrpack: %s", mrpack_url)
@@ -228,9 +229,7 @@ class ModrinthPackInstaller:
                 global_excluded_slugs: set[str] = set(
                     s.lower() for s in mr_filter.get("globalExcludes", [])
                 )
-                global_excluded_slugs.update(
-                    s.lower() for s in pack_overrides.get("excludes", [])
-                )
+                global_excluded_slugs.update(s.lower() for s in pack_overrides.get("excludes", []))
 
                 global_force_include_slugs: set[str] = set(
                     s.lower() for s in mr_filter.get("globalForceIncludes", [])
@@ -271,7 +270,8 @@ class ModrinthPackInstaller:
                 skipped = len(all_files) - len(files_to_install)
                 log.info(
                     "Downloading %d modpack file(s) (%d skipped as client-only/excluded)...",
-                    len(files_to_install), skipped,
+                    len(files_to_install),
+                    skipped,
                 )
                 new_files: list[str] = []
                 session = self.session

@@ -103,8 +103,7 @@ class ForgeInstaller:
             )
             return installer_jar
         raise RuntimeError(
-            f"No Forge installer found for {self.minecraft_version}-{resolved}. "
-            f"Tried: {urls}"
+            f"No Forge installer found for {self.minecraft_version}-{resolved}. " f"Tried: {urls}"
         ) from last_exc
 
     def install(self, output_dir: Path) -> Path:

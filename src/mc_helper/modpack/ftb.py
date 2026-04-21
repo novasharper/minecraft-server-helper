@@ -146,7 +146,8 @@ class FTBPackInstaller:
         files_to_download = [f for f in all_files if _should_include(f, self.exclude_mods)]
         log.info(
             "Downloading %d file(s) (%d skipped as client-only/excluded)...",
-            len(files_to_download), len(all_files) - len(files_to_download),
+            len(files_to_download),
+            len(all_files) - len(files_to_download),
         )
 
         # 6. Download files in parallel (individual progress bars suppressed; too noisy)

@@ -53,13 +53,21 @@ class ServerConfig(BaseModel):
     memory: str = "1G"
     properties: dict[str, str | int | bool] = Field(default_factory=dict)
     jvm_args: list[str] = Field(default_factory=list)
+    jvm_xx_opts: list[str] = Field(default_factory=list)
+    jvm_opts: list[str] = Field(default_factory=list)
+    jvm_dd_opts: dict[str, str] = Field(default_factory=dict)
     server_args: list[str] = Field(default_factory=lambda: ["nogui"])
     java_bin: str = "java"
+    use_aikar_flags: bool = False
+    use_meowice_flags: bool = False
+    use_meowice_graalvm_flags: bool = False
+    use_flare_flags: bool = False
+    use_simd_flags: bool = False
 
 
 # ── Modpack ───────────────────────────────────────────────────────────────────
 
-ModpackPlatform = Literal["modrinth", "curseforge", "ftb", "github", "url"]
+ModpackPlatform = Literal["modrinth", "curseforge", "ftb", "github", "url", "gtnh"]
 VersionType = Literal["release", "beta", "alpha"]
 
 
@@ -89,6 +97,10 @@ class FTBSource(BaseModel):
     version_type: VersionType = "release"
 
 
+class GTNHSource(BaseModel):
+    version: str = "latest"  # "latest" | "latest-dev" | exact e.g. "2.7.0" or "2.7.0-beta-1"
+
+
 class GithubSource(BaseModel):
     repo: str
     tag: str = "LATEST"
@@ -107,7 +119,7 @@ class UrlSource(BaseModel):
     start_artifact: Optional[str] = None
 
 
-Source = ModrinthSource | CurseForgeSource | FTBSource | GithubSource | UrlSource
+Source = ModrinthSource | CurseForgeSource | FTBSource | GithubSource | UrlSource | GTNHSource
 
 _SOURCE_MAP: dict[str, type[BaseModel]] = {
     "modrinth": ModrinthSource,
@@ -115,6 +127,7 @@ _SOURCE_MAP: dict[str, type[BaseModel]] = {
     "ftb": FTBSource,
     "github": GithubSource,
     "url": UrlSource,
+    "gtnh": GTNHSource,
 }
 
 
