@@ -4,9 +4,10 @@
 server:
   output_dir: ${E2E_OUTPUT_DIR}/aoc
   eula: true
-  memory: 2G
+  memory: 4G
 
 modpack:
   platform: curseforge
-  slug: aoc
-  api_key: ${CF_API_KEY}
+  source:
+    slug: aoc
+    api_key: ${CF_API_KEY}

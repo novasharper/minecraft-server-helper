@@ -3,9 +3,10 @@
 server:
   output_dir: ${E2E_OUTPUT_DIR}/ftb-sb4
   eula: true
-  memory: 2G
+  memory: 4G
 
 modpack:
   platform: ftb
-  pack_id: 130
-  version_type: release
+  source:
+    pack_id: 130
+    version_type: release

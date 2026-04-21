@@ -3,9 +3,10 @@
 server:
   output_dir: ${E2E_OUTPUT_DIR}/cobblemon
   eula: true
-  memory: 2G
+  memory: 4G
 
 modpack:
   platform: modrinth
-  project: cobblemon-fabric
-  version_type: release
+  source:
+    project: cobblemon-fabric
+    version_type: release
