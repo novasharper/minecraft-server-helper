@@ -13,6 +13,7 @@ import re
 import shutil
 import tempfile
 import zipfile
+from enum import Enum
 from pathlib import Path
 from typing import NamedTuple
 
@@ -30,100 +31,104 @@ log = logging.getLogger(__name__)
 _VERSIONS_URL = "https://downloads.gtnewhorizons.com/versions.json"
 _MC_VERSION = "1.7.10"
 
-_JAR_JAVA8 = "forge-1.7.10-10.13.4.1614-1.7.10-universal.jar"
-_JAR_JAVA17 = "lwjgl3ify-forgePatches.jar"
+_MIN_JAVA_VERSION = 17
+_START_JAR = "lwjgl3ify-forgePatches.jar"
 
 
-class _PackEntry(NamedTuple):
-    url: str
+class ReleaseType(Enum):
+    BETA = 0
+    RC = 1
+    RELEASE = 2
+
+
+class ReleaseInfo(NamedTuple):
     version: tuple[int, ...]
-    release_type: str
+    release_type: ReleaseType
+    dev_version: int
+
+    @staticmethod
+    def from_version_str(version_str: str) -> ReleaseInfo:
+        version = _parse_version(version_str)
+        release_type, dev_version = _parse_release_type(version_str)
+        return ReleaseInfo(version, release_type, dev_version)
+
+    def __str__(self) -> str:
+        if self.release_type == ReleaseType.BETA:
+            tail = f"-beta-{self.dev_version}"
+        elif self.release_type == ReleaseType.RC:
+            tail = f"-rc-{self.dev_version}"
+        else:
+            tail = ""
+
+        parts = [str(p) for p in self.version]
+        return f"{'.'.join(parts)}{tail}"
+
+
+class PackEntry(NamedTuple):
+    release: ReleaseInfo
+    url: str
     java_min: int
     java_max: int
-    filename: str
+
+    @property
+    def is_beta(self):
+        return self.release.release_type != ReleaseType.RELEASE
 
 
-def _parse_java_range(filename: str) -> tuple[int, int]:
-    m = re.search(r"Java_(\d+)(?:-(\d+))?", filename)
-    if not m:
-        return (0, 9999)
-    lo = int(m.group(1))
-    hi = int(m.group(2)) if m.group(2) else lo
-    return (lo, hi)
-
-
-def _parse_version(filename: str) -> tuple[int, ...]:
-    m = re.search(r"(\d+(?:\.\d+)+)", filename)
+def _parse_version(version: str) -> tuple[int, ...]:
+    m = re.search(r"(\d+(?:\.\d+)+)", version)
     if not m:
         return (0,)
     return tuple(int(p) for p in m.group(1).split("."))
 
 
-def _parse_release_type(filename: str) -> str:
-    m = re.search(r"(beta|RC(?:-\d+)?)", filename, re.IGNORECASE)
-    return m.group(1) if m else ""
+def _parse_release_type(version: str) -> tuple[ReleaseType, int]:
+    m = re.search(r"(beta|rc)(?:-(\d+))?", version.lower())
+    if not m:
+        return ReleaseType.RELEASE, 0
+
+    _release_type = m.group(1)
+    _release_ver = int(m.group(2) or 0)
+    if _release_type.startswith("rc"):
+        return ReleaseType.RC, _release_ver
+
+    assert _release_type == "beta"
+    return ReleaseType.BETA, _release_ver
 
 
-def _is_beta(url: str) -> bool:
-    return "/betas/" in url
-
-
-def _pack_sort_key(p: _PackEntry) -> tuple:
-    release_rank = 2 if p.release_type == "" else (1 if p.release_type.startswith("RC") else 0)
-    return (p.version, release_rank)
-
-
-def _fetch_packs(session: requests.Session) -> list[str]:
+def _fetch_packs(session: requests.Session) -> list[PackEntry]:
     resp = session.get(_VERSIONS_URL, timeout=30)
     resp.raise_for_status()
     data = resp.json()
-    urls: list[str] = []
-    for version_block in data.get("versions", {}).values():
-        for entry in version_block.get("server", []):
-            if isinstance(entry, str) and "Server" in entry:
-                urls.append(entry)
-    return urls
-
-
-def _select_pack(urls: list[str], version_selector: str, java_ver: int) -> _PackEntry | None:
-    entries: list[_PackEntry] = []
-    for url in urls:
-        filename = url.split("/")[-1]
-        java_min, java_max = _parse_java_range(filename)
-        if not (java_min <= java_ver <= java_max):
-            continue
-        ver_tuple = _parse_version(filename)
-        rel_type = _parse_release_type(filename)
-        entries.append(
-            _PackEntry(
-                url=url,
-                version=ver_tuple,
-                release_type=rel_type,
-                java_min=java_min,
-                java_max=java_max,
-                filename=filename,
+    packs: list[PackEntry] = []
+    for version, pack_data in data.get("versions", {}).items():
+        packs.append(
+            PackEntry(
+                ReleaseInfo.from_version_str(version),
+                pack_data["server"]["java17_2XUrl"],
+                _MIN_JAVA_VERSION,
+                pack_data["maxJavaVersion"],
             )
         )
+    return packs
 
-    if not entries:
+
+def _select_pack(packs: list[PackEntry], version_selector: str, java_ver: int) -> PackEntry | None:
+    if not packs:
         return None
 
     lower = version_selector.lower()
     if lower in ("latest", "latest-dev"):
-        want_beta = lower == "latest-dev"
-        candidates = [e for e in entries if _is_beta(e.url) == want_beta]
-        if not candidates:
-            candidates = entries
-        return max(candidates, key=_pack_sort_key)
+        want_dev = lower == "latest-dev"
+        candidates = [p for p in packs if p.is_beta == want_dev]
 
-    for entry in entries:
-        bare = entry.filename
-        ver_str = ".".join(str(v) for v in entry.version)
-        full_ver = f"{ver_str}-{entry.release_type}" if entry.release_type else ver_str
-        if version_selector in bare or version_selector == full_ver:
-            return entry
+    else:
+        candidates = [p for p in packs if lower in str(p.release)]
 
-    return None
+    if not candidates:
+        return None
+
+    return max(candidates, key=lambda p: p.release)
 
 
 class GTNHPackInstaller:
@@ -151,30 +156,35 @@ class GTNHPackInstaller:
                 "Could not detect Java version from java_bin=%r; "
                 "ensure Java is installed and accessible" % java_bin
             )
-        if java_ver not in range(8, 9) and java_ver < 17:
-            raise RuntimeError(f"GTNH only supports Java 8 or Java 17+; detected Java {java_ver}")
+        if java_ver < _MIN_JAVA_VERSION:
+            # Technically Java8 is supported, but for simplicity only support
+            # more modern java versions
+            raise RuntimeError(
+                f"GTNH only supports Java {_MIN_JAVA_VERSION}+; detected Java {java_ver}"
+            )
 
         log.info("Fetching GTNH pack list from %s", _VERSIONS_URL)
-        urls = _fetch_packs(self.session)
-        if not urls:
+        packs = _fetch_packs(self.session)
+        if not packs:
             raise RuntimeError("No GTNH server packs found in versions.json")
 
-        pack = _select_pack(urls, self.source.version, java_ver)
+        pack = _select_pack(packs, self.source.version, java_ver)
         if pack is None:
             raise RuntimeError(
                 f"No GTNH server pack found for version={self.source.version!r} "
                 f"and Java {java_ver}"
             )
 
-        log.info("Selected GTNH pack: %s", pack.filename)
+        log.info("Selected GTNH pack: %s", pack.release)
         output_dir.mkdir(parents=True, exist_ok=True)
 
         with tempfile.TemporaryDirectory() as tmp_str:
             tmp_dir = Path(tmp_str)
-            archive_path = tmp_dir / pack.filename
+            filename = f"GT_New_Horizons_{str(pack.release)}.zip"
+            archive_path = tmp_dir / filename
             download_file(pack.url, archive_path, session=self.session, show_progress=True)
 
-            log.info("Extracting %s...", pack.filename)
+            log.info("Extracting %s...", filename)
             with zipfile.ZipFile(archive_path) as zf:
                 zf.extractall(tmp_dir / "extracted")
 
@@ -194,11 +204,10 @@ class GTNHPackInstaller:
                 else:
                     shutil.copy2(src, dest)
 
-        start_jar = _JAR_JAVA17 if java_ver >= 17 else _JAR_JAVA8
-        start_artifact = output_dir / start_jar
+        start_artifact = output_dir / _START_JAR
         if not start_artifact.exists():
             raise RuntimeError(
-                f"Expected start artifact {start_jar!r} not found after extraction; "
+                f"Expected start artifact {_START_JAR!r} not found after extraction; "
                 "check GTNH pack contents"
             )
 
@@ -206,9 +215,7 @@ class GTNHPackInstaller:
         manifest.load()
         manifest.mc_version = _MC_VERSION
         manifest.loader_type = "gtnh"
-        manifest.loader_version = ".".join(str(v) for v in pack.version) + (
-            f"-{pack.release_type}" if pack.release_type else ""
-        )
+        manifest.loader_version = str(pack.release)
         manifest.add_file(start_artifact.relative_to(output_dir))
         manifest.save()
 
@@ -216,6 +223,6 @@ class GTNHPackInstaller:
             "GTNH %s installed (Java %d → %s)",
             manifest.loader_version,
             java_ver,
-            start_jar,
+            _START_JAR,
         )
         return start_artifact
