@@ -127,7 +127,7 @@ def test_cleanup_stale_deletes_removed_files(tmp_path):
     m = Manifest(tmp_path)
     m.files = ["mods/old.jar", "mods/keep.jar"]
 
-    deleted = m.cleanup_stale(tmp_path, new_files=["mods/keep.jar"])
+    deleted = m.cleanup_stale(new_files=["mods/keep.jar"])
     assert old in deleted
     assert not old.exists()
     assert keep.exists()
@@ -141,12 +141,12 @@ def test_cleanup_stale_returns_deleted_paths(tmp_path):
     m = Manifest(tmp_path)
     m.files = ["mods/stale.jar"]
 
-    deleted = m.cleanup_stale(tmp_path, new_files=[])
+    deleted = m.cleanup_stale(new_files=[])
     assert stale in deleted
 
 
 def test_cleanup_stale_ignores_already_missing(tmp_path):
     m = Manifest(tmp_path)
     m.files = ["mods/ghost.jar"]  # file never created on disk
-    deleted = m.cleanup_stale(tmp_path, new_files=[])
+    deleted = m.cleanup_stale(new_files=[])
     assert deleted == []

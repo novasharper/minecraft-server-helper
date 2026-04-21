@@ -2,7 +2,6 @@
 
 Reference: mc-image-helper/.../modrinth/ModrinthPackInstaller.java
 Reference: mc-image-helper/.../modrinth/ModrinthApiPackFetcher.java
-Reference: mc-image-helper/.../modrinth/model/ModpackIndex.java
 Reference: docker-minecraft-server/scripts/start-deployModrinth
 API base: https://api.modrinth.com/v2
 
@@ -17,7 +16,6 @@ Workflow:
   8. Cleanup stale files, save manifest
 """
 
-import fnmatch
 import json
 import logging
 import zipfile
@@ -26,135 +24,38 @@ from pathlib import Path
 
 import requests
 
-from mc_helper.http_client import build_session, download_file, get_json
+from mc_helper.config import ModpackConfig, ModrinthSource, ServerConfig
+from mc_helper.http_client import build_session, download_file
 from mc_helper.manifest import Manifest
-from mc_helper.utils import extract_zip_overrides
+from mc_helper.modrinth_api import (
+    mrpack_url,
+    project_id_from_url,
+    resolve_project_slugs,
+    resolve_version,
+)
+
+from ._archives import extract_zip_overrides
+from ._filters import load_exclude_include, matches_any
 
 log = logging.getLogger(__name__)
 
-_API_BASE = "https://api.modrinth.com/v2"
 _MAX_WORKERS = 10
-_DATA_DIR = Path(__file__).parent.parent / "data"
-
-
-def _load_mr_filter() -> dict:
-    """Load the bundled Modrinth exclude/include filter file."""
-    path = _DATA_DIR / "modrinth-exclude-include.json"
-    if path.exists():
-        return json.loads(path.read_text())
-    return {"globalExcludes": [], "globalForceIncludes": [], "modpacks": {}}
-
-
-def _project_id_from_url(url: str) -> str | None:
-    """Extract the Modrinth project ID from a CDN URL.
-
-    CDN URLs follow the pattern:
-    ``https://cdn.modrinth.com/data/{project_id}/versions/{version_id}/{filename}``
-    """
-    parts = url.split("/")
-    try:
-        idx = parts.index("data")
-        return parts[idx + 1]
-    except (ValueError, IndexError):
-        return None
-
-
-def _resolve_project_slugs(session: requests.Session, project_ids: list[str]) -> dict[str, str]:
-    """Batch-resolve Modrinth project IDs to slugs.
-
-    Returns ``{project_id: slug}``.
-    """
-    if not project_ids:
-        return {}
-    ids_json = json.dumps(project_ids)
-    url = f"{_API_BASE}/projects?ids={ids_json}"
-    data = get_json(session, url)
-    return {item["id"]: item.get("slug", "") for item in data}  # type: ignore[union-attr]
-
-
-def resolve_version(
-    session: requests.Session,
-    project: str,
-    minecraft_version: str | None,
-    loader: str | None,
-    version_type: str = "release",
-    requested_version: str = "LATEST",
-) -> dict:
-    """Return the best matching version object for the project."""
-    if requested_version and requested_version.upper() != "LATEST":
-        # Specific version number or ID — try direct lookup first
-        versions = get_json(session, f"{_API_BASE}/project/{project}/version")
-        for v in versions:
-            if v["version_number"] == requested_version or v["id"] == requested_version:
-                return v
-        raise ValueError(
-            f"Modrinth version '{requested_version}' not found for project '{project}'"
-        )
-
-    params: list[str] = []
-    if minecraft_version:
-        params.append(f'game_versions=["{minecraft_version}"]')
-    if loader:
-        params.append(f'loaders=["{loader}"]')
-    query = "&".join(params)
-    url = f"{_API_BASE}/project/{project}/version"
-    if query:
-        url += f"?{query}"
-
-    versions = get_json(session, url)
-    if not versions:
-        raise ValueError(
-            f"No Modrinth versions found for project '{project}' "
-            f"(mc={minecraft_version}, loader={loader})"
-        )
-
-    # Prefer requested version_type, fall back to whatever is available
-    preference = ["release", "beta", "alpha"]
-    if version_type in preference:
-        preference = [version_type] + [t for t in preference if t != version_type]
-
-    for vtype in preference:
-        for v in versions:
-            if v.get("version_type") == vtype:
-                return v
-
-    return versions[0]
-
-
-def _mrpack_url(version: dict) -> str:
-    """Pick the primary .mrpack file from a version object."""
-    for f in version.get("files", []):
-        if f.get("primary"):
-            return f["url"]
-    # Fall back to first file
-    return version["files"][0]["url"]
 
 
 def _should_include(
     file_entry: dict,
     exclusions: list[str],
-    excluded_slugs: set[str] | None = None,
-    force_include_slugs: set[str] | None = None,
-    project_slug: str | None = None,
+    excluded_slugs: set[str],
+    force_include_slugs: set[str],
+    project_slug: str | None,
 ) -> bool:
-    """Return True if the modpack file should be installed server-side.
-
-    Checks (in order):
-      1. Global slug force-include → always include
-      2. Global slug exclude → skip
-      3. User filename-pattern exclude → skip
-      4. Client-only detection via env.server == "unsupported" → skip
-    """
-    if force_include_slugs and project_slug and project_slug in force_include_slugs:
+    if project_slug and project_slug in force_include_slugs:
         return True
-    if excluded_slugs and project_slug and project_slug in excluded_slugs:
+    if project_slug and project_slug in excluded_slugs:
         return False
-    path = file_entry.get("path", "")
-    for pattern in exclusions:
-        if fnmatch.fnmatch(Path(path).name, pattern):
-            return False
-    env = file_entry.get("env", {})
-    if env.get("server") == "unsupported":
+    if matches_any(exclusions, Path(file_entry.get("path", "")).name):
+        return False
+    if file_entry.get("env", {}).get("server") == "unsupported":
         return False
     return True
 
@@ -164,23 +65,15 @@ class ModrinthPackInstaller:
 
     def __init__(
         self,
-        project: str,
-        minecraft_version: str | None = None,
-        loader: str | None = None,
-        version_type: str = "release",
-        requested_version: str = "LATEST",
-        exclude_mods: list[str] | None = None,
-        overrides_exclusions: list[str] | None = None,
+        source: ModrinthSource,
+        server: ServerConfig,
+        modpack: ModpackConfig,
         session: requests.Session | None = None,
         show_progress: bool = True,
     ) -> None:
-        self.project = project
-        self.minecraft_version = minecraft_version
-        self.loader = loader
-        self.version_type = version_type
-        self.requested_version = requested_version
-        self.exclude_mods = exclude_mods or []
-        self.overrides_exclusions = overrides_exclusions or []
+        self.source = source
+        self.server = server
+        self.modpack = modpack
         self.session = session or build_session()
         self.show_progress = show_progress
 
@@ -192,38 +85,41 @@ class ModrinthPackInstaller:
         manifest = Manifest(output_dir)
         manifest.load()
 
-        # 1. Resolve version
+        loader = (
+            self.server.type
+            if self.server.type not in (None, "vanilla", "paper", "purpur")
+            else None
+        )
+
         version = resolve_version(
             self.session,
-            self.project,
-            self.minecraft_version,
-            self.loader,
-            self.version_type,
-            self.requested_version,
+            self.source.project,
+            self.server.minecraft_version,
+            loader,
+            self.source.version_type,
+            self.source.version,
         )
         log.info(
             "Resolved Modrinth version: %s (%s)",
             version.get("version_number"),
             version.get("id"),
         )
-        mrpack_url = _mrpack_url(version)
-        log.debug("Downloading .mrpack: %s", mrpack_url)
+        pack_url = mrpack_url(version)
+        log.debug("Downloading .mrpack: %s", pack_url)
 
-        # 2. Download .mrpack to a temp file
         tmp_mrpack = output_dir / ".mc-helper-mrpack.tmp"
         output_dir.mkdir(parents=True, exist_ok=True)
-        download_file(
-            mrpack_url, tmp_mrpack, session=self.session, show_progress=self.show_progress
-        )
+        download_file(pack_url, tmp_mrpack, session=self.session, show_progress=self.show_progress)
+
+        exclude = self.modpack.exclude_mods or []
+        overrides_excl = self.modpack.overrides_exclusions or []
 
         try:
             with zipfile.ZipFile(tmp_mrpack) as zf:
-                # 3. Parse modrinth.index.json
                 index = json.loads(zf.read("modrinth.index.json"))
 
-                # G1: load global exclude/include filter and batch-resolve slugs
-                mr_filter = _load_mr_filter()
-                pack_slug = self.project or ""
+                mr_filter = load_exclude_include("mr")
+                pack_slug = self.source.project or ""
                 pack_overrides = mr_filter.get("modpacks", {}).get(pack_slug, {})
 
                 global_excluded_slugs: set[str] = set(
@@ -238,30 +134,27 @@ class ModrinthPackInstaller:
                     s.lower() for s in pack_overrides.get("forceIncludes", [])
                 )
 
-                # Batch-resolve project IDs to slugs from CDN URLs
                 all_files = index.get("files", [])
                 raw_ids = [
                     pid
                     for f in all_files
                     for url in f.get("downloads", [])[:1]
-                    if (pid := _project_id_from_url(url)) is not None
+                    if (pid := project_id_from_url(url)) is not None
                 ]
-                unique_ids = list(dict.fromkeys(raw_ids))  # deduplicate, preserve order
-                slug_map = _resolve_project_slugs(self.session, unique_ids)
-                # Build a per-file lookup: url → project_slug
+                unique_ids = list(dict.fromkeys(raw_ids))
+                slug_map = resolve_project_slugs(self.session, unique_ids)
                 file_slug_map: dict[int, str | None] = {}
                 for i, f in enumerate(all_files):
                     urls = f.get("downloads", [])
-                    pid = _project_id_from_url(urls[0]) if urls else None
+                    pid = project_id_from_url(urls[0]) if urls else None
                     file_slug_map[i] = slug_map.get(pid, "").lower() if pid else None
 
-                # 4+5. Download modpack files (parallel)
                 files_to_install = [
                     (i, f)
                     for i, f in enumerate(all_files)
                     if _should_include(
                         f,
-                        self.exclude_mods,
+                        exclude,
                         global_excluded_slugs,
                         global_force_include_slugs,
                         file_slug_map.get(i),
@@ -298,18 +191,16 @@ class ModrinthPackInstaller:
                     for fut in as_completed(futures):
                         new_files.append(fut.result())
 
-                # 6. Extract overrides
                 override_files = extract_zip_overrides(
-                    zf, output_dir, ["overrides", "server-overrides"], self.overrides_exclusions
+                    zf, output_dir, ["overrides", "server-overrides"], overrides_excl
                 )
                 log.info("Extracted %d override file(s)", len(override_files))
                 new_files.extend(override_files)
 
-            # 8. Cleanup stale + save manifest
-            manifest.cleanup_stale(output_dir, new_files)
+            manifest.cleanup_stale(new_files)
             manifest.files = new_files
             deps = index.get("dependencies", {})
-            manifest.mc_version = deps.get("minecraft", self.minecraft_version)
+            manifest.mc_version = deps.get("minecraft", self.server.minecraft_version)
             _loader_key_map = {
                 "fabric-loader": "fabric",
                 "quilt-loader": "quilt",

@@ -53,7 +53,8 @@ def test_server_defaults():
     assert cfg.server.minecraft_version is None
     assert cfg.server.loader_version == "LATEST"
     assert cfg.server.eula is False
-    assert cfg.server.memory == "1G"
+    assert cfg.server.jvm.memory == "1G"
+    assert cfg.server.jvm.java_bin == "java"
     assert cfg.server.properties == {}
 
 

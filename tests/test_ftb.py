@@ -3,6 +3,7 @@
 import pytest
 import responses as rsps_lib
 
+from mc_helper.config import FTBSource, ModpackConfig
 from mc_helper.http_client import build_session
 from mc_helper.manifest import Manifest
 from mc_helper.modpack.ftb import FTBPackInstaller, _ftb_get, _should_include
@@ -11,6 +12,18 @@ _API = "https://api.feed-the-beast.com/v1/modpacks"
 _PACK_ID = 7
 
 # ── helpers ───────────────────────────────────────────────────────────────────
+
+
+def _make_installer(
+    pack_id: int = _PACK_ID,
+    version_id: int | None = None,
+    version_type: str = "release",
+    exclude_mods: list[str] | None = None,
+    session=None,
+):
+    source = FTBSource(pack_id=pack_id, version_id=version_id, version_type=version_type)
+    modpack = ModpackConfig(platform="ftb", source=source, exclude_mods=exclude_mods or [])
+    return FTBPackInstaller(source, modpack, session=session or build_session())
 
 
 def _pack_response(versions: list[dict]) -> dict:
@@ -125,14 +138,14 @@ def test_resolve_latest_release():
         _version_entry(100, "beta"),
     ]
     rsps_lib.add(rsps_lib.GET, f"{_API}/modpack/{_PACK_ID}", json=_pack_response(versions))
-    installer = FTBPackInstaller(pack_id=_PACK_ID, session=build_session())
+    installer = _make_installer()
     assert installer._resolve_version_id() == 300
 
 
 @rsps_lib.activate
 def test_resolve_by_explicit_version_id():
     # No pack API call should be made when version_id is given
-    installer = FTBPackInstaller(pack_id=_PACK_ID, version_id=42, session=build_session())
+    installer = _make_installer(version_id=42)
     assert installer._resolve_version_id() == 42
     assert len(rsps_lib.calls) == 0
 
@@ -141,7 +154,7 @@ def test_resolve_by_explicit_version_id():
 def test_resolve_beta_when_no_release():
     versions = [_version_entry(100, "beta"), _version_entry(50, "alpha")]
     rsps_lib.add(rsps_lib.GET, f"{_API}/modpack/{_PACK_ID}", json=_pack_response(versions))
-    installer = FTBPackInstaller(pack_id=_PACK_ID, version_type="beta", session=build_session())
+    installer = _make_installer(version_type="beta")
     assert installer._resolve_version_id() == 100
 
 
@@ -149,8 +162,8 @@ def test_resolve_beta_when_no_release():
 def test_resolve_falls_back_to_first_when_no_type_match():
     versions = [_version_entry(200, "beta"), _version_entry(100, "alpha")]
     rsps_lib.add(rsps_lib.GET, f"{_API}/modpack/{_PACK_ID}", json=_pack_response(versions))
-    installer = FTBPackInstaller(pack_id=_PACK_ID, version_type="release", session=build_session())
     # Falls back to first (highest id) when no release found
+    installer = _make_installer(version_type="release")
     assert installer._resolve_version_id() == 200
 
 
@@ -167,7 +180,7 @@ def test_install_downloads_files(tmp_path):
     rsps_lib.add(rsps_lib.GET, f"{_API}/modpack/{_PACK_ID}/1", json=_version_detail(1, files=files))
     rsps_lib.add(rsps_lib.GET, "https://cdn.ftb.cloud/mymod.jar", body=mod_bytes)
 
-    FTBPackInstaller(pack_id=_PACK_ID, session=build_session()).install(tmp_path)
+    _make_installer().install(tmp_path)
 
     assert (tmp_path / "mods" / "mymod.jar").read_bytes() == mod_bytes
 
@@ -185,7 +198,7 @@ def test_install_skips_client_only_files(tmp_path):
     rsps_lib.add(rsps_lib.GET, "https://cdn.ftb.cloud/server.jar", body=b"server")
     # client.jar must NOT be requested
 
-    FTBPackInstaller(pack_id=_PACK_ID, session=build_session()).install(tmp_path)
+    _make_installer().install(tmp_path)
 
     assert (tmp_path / "mods" / "server.jar").exists()
     assert not (tmp_path / "mods" / "client.jar").exists()
@@ -204,9 +217,7 @@ def test_install_applies_exclude_mods_pattern(tmp_path):
     rsps_lib.add(rsps_lib.GET, "https://cdn.ftb.cloud/sodium.jar", body=b"sodium")
     # jei.jar must NOT be requested
 
-    FTBPackInstaller(pack_id=_PACK_ID, exclude_mods=["jei-*"], session=build_session()).install(
-        tmp_path
-    )
+    _make_installer(exclude_mods=["jei-*"]).install(tmp_path)
 
     assert (tmp_path / "mods" / "sodium.jar").exists()
     assert not (tmp_path / "mods" / "jei-1.21.jar").exists()
@@ -227,7 +238,7 @@ def test_install_saves_manifest(tmp_path):
         json=_version_detail(1, files=[], targets=targets),
     )
 
-    FTBPackInstaller(pack_id=_PACK_ID, session=build_session()).install(tmp_path)
+    _make_installer().install(tmp_path)
 
     m = Manifest(tmp_path)
     m.load()
@@ -245,7 +256,7 @@ def test_install_saves_file_list_in_manifest(tmp_path):
     rsps_lib.add(rsps_lib.GET, f"{_API}/modpack/{_PACK_ID}/1", json=_version_detail(1, files=files))
     rsps_lib.add(rsps_lib.GET, "https://cdn.ftb.cloud/mod.jar", body=b"data")
 
-    FTBPackInstaller(pack_id=_PACK_ID, session=build_session()).install(tmp_path)
+    _make_installer().install(tmp_path)
 
     m = Manifest(tmp_path)
     m.load()
@@ -273,7 +284,7 @@ def test_install_deletes_stale_files(tmp_path):
     rsps_lib.add(rsps_lib.GET, f"{_API}/modpack/{_PACK_ID}/2", json=_version_detail(2, files=files))
     rsps_lib.add(rsps_lib.GET, "https://cdn.ftb.cloud/new.jar", body=b"new")
 
-    FTBPackInstaller(pack_id=_PACK_ID, session=build_session()).install(tmp_path)
+    _make_installer().install(tmp_path)
 
     assert not stale.exists()
     assert (tmp_path / "mods" / "new.jar").exists()
@@ -291,7 +302,7 @@ def test_install_uses_mirror_on_primary_failure(tmp_path):
     rsps_lib.add(rsps_lib.GET, "https://cdn.ftb.cloud/mod.jar", status=404)
     rsps_lib.add(rsps_lib.GET, mirror_url, body=b"mod-data")
 
-    FTBPackInstaller(pack_id=_PACK_ID, session=build_session()).install(tmp_path)
+    _make_installer().install(tmp_path)
 
     assert (tmp_path / "mods" / "mod.jar").read_bytes() == b"mod-data"
 
@@ -309,7 +320,7 @@ def test_install_sha1_verified(tmp_path):
     rsps_lib.add(rsps_lib.GET, f"{_API}/modpack/{_PACK_ID}/1", json=_version_detail(1, files=files))
     rsps_lib.add(rsps_lib.GET, "https://cdn.ftb.cloud/mod.jar", body=mod_bytes)
 
-    FTBPackInstaller(pack_id=_PACK_ID, session=build_session()).install(tmp_path)
+    _make_installer().install(tmp_path)
 
     assert (tmp_path / "mods" / "mod.jar").read_bytes() == mod_bytes
 
@@ -324,6 +335,6 @@ def test_install_files_nested_path(tmp_path):
     rsps_lib.add(rsps_lib.GET, f"{_API}/modpack/{_PACK_ID}/1", json=_version_detail(1, files=files))
     rsps_lib.add(rsps_lib.GET, "https://cdn.ftb.cloud/server.cfg", body=b"cfg-data")
 
-    FTBPackInstaller(pack_id=_PACK_ID, session=build_session()).install(tmp_path)
+    _make_installer().install(tmp_path)
 
     assert (tmp_path / "config" / "server.cfg").read_bytes() == b"cfg-data"

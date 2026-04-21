@@ -15,6 +15,12 @@ _RETRY = Retry(
     allowed_methods=["GET", "HEAD"],
 )
 
+_HASHERS = {
+    "sha1": hashlib.sha1,
+    "sha256": hashlib.sha256,
+    "sha512": hashlib.sha512,
+}
+
 
 def get_json(session: requests.Session, url: str) -> object:
     """GET *url* and return the parsed JSON body. Raises on non-2xx."""
@@ -49,18 +55,24 @@ def download_file(
     Optionally verify SHA-1, SHA-256, or SHA-512 after download.
     Returns *dest*.
     """
+    checksums: dict[str, str] = {}
+    if expected_sha1:
+        checksums["sha1"] = expected_sha1
+    if expected_sha256:
+        checksums["sha256"] = expected_sha256
+    if expected_sha512:
+        checksums["sha512"] = expected_sha512
+
     if session is None:
         session = build_session()
 
     dest.parent.mkdir(parents=True, exist_ok=True)
 
+    hashers = {alg: _HASHERS[alg]() for alg in checksums}
+
     with session.get(url, stream=True, timeout=60) as resp:
         resp.raise_for_status()
         total = int(resp.headers.get("Content-Length", 0)) or None
-        sha1 = hashlib.sha1() if expected_sha1 else None
-        sha256 = hashlib.sha256() if expected_sha256 else None
-        sha512 = hashlib.sha512() if expected_sha512 else None
-
         with (
             open(dest, "wb") as fh,
             tqdm(
@@ -75,35 +87,37 @@ def download_file(
             for chunk in resp.iter_content(chunk_size=65536):
                 fh.write(chunk)
                 bar.update(len(chunk))
-                if sha1:
-                    sha1.update(chunk)
-                if sha256:
-                    sha256.update(chunk)
-                if sha512:
-                    sha512.update(chunk)
+                for h in hashers.values():
+                    h.update(chunk)
 
-    if expected_sha1 and sha1:
-        actual = sha1.hexdigest()
-        if actual != expected_sha1.lower():
+    _alg_label = {"sha1": "SHA-1", "sha256": "SHA-256", "sha512": "SHA-512"}
+    for alg, expected in checksums.items():
+        actual = hashers[alg].hexdigest()
+        if actual != expected.lower():
             dest.unlink(missing_ok=True)
-            raise ValueError(
-                f"SHA-1 mismatch for {dest.name}: expected {expected_sha1}, got {actual}"
-            )
-
-    if expected_sha256 and sha256:
-        actual = sha256.hexdigest()
-        if actual != expected_sha256.lower():
-            dest.unlink(missing_ok=True)
-            raise ValueError(
-                f"SHA-256 mismatch for {dest.name}: expected {expected_sha256}, got {actual}"
-            )
-
-    if expected_sha512 and sha512:
-        actual = sha512.hexdigest()
-        if actual != expected_sha512.lower():
-            dest.unlink(missing_ok=True)
-            raise ValueError(
-                f"SHA-512 mismatch for {dest.name}: expected {expected_sha512}, got {actual}"
-            )
+            label = _alg_label.get(alg, alg.upper())
+            raise ValueError(f"{label} mismatch for {dest.name}: expected {expected}, got {actual}")
 
     return dest
+
+
+def download_with_mirrors(
+    primary_url: str,
+    mirrors: list[str],
+    dest: Path,
+    session: requests.Session,
+    expected_sha1: str | None = None,
+) -> None:
+    """Try *primary_url* then each mirror in order. Raises RuntimeError if all fail."""
+    urls = [primary_url, *mirrors]
+    last_exc: Exception | None = None
+    for url in urls:
+        try:
+            download_file(
+                url, dest, session=session, expected_sha1=expected_sha1, show_progress=False
+            )
+            return
+        except Exception as exc:
+            last_exc = exc
+            dest.unlink(missing_ok=True)
+    raise RuntimeError(f"All download URLs failed for {dest.name}") from last_exc

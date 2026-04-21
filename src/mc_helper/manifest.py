@@ -98,11 +98,12 @@ class Manifest:
         """Return True if *new_files* differs from the tracked file list."""
         return sorted(self.files) != sorted(new_files)
 
-    def cleanup_stale(self, output_dir: Path, new_files: list[str]) -> list[Path]:
+    def cleanup_stale(self, new_files: list[str]) -> list[Path]:
         """Delete files that are tracked in the manifest but absent from *new_files*.
 
         Returns the list of deleted paths.
         """
+        output_dir = self.path.parent
         new_set = set(new_files)
         deleted: list[Path] = []
         for entry in self.files:
@@ -112,3 +113,7 @@ class Manifest:
                     target.unlink()
                     deleted.append(target)
         return deleted
+
+    def snapshot(self) -> dict:
+        """Return a copy of the raw manifest data (for read-only display)."""
+        return dict(self._data)

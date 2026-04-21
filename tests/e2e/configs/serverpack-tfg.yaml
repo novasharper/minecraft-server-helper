@@ -2,7 +2,8 @@
 server:
   output_dir: ${E2E_OUTPUT_DIR}/tfg
   eula: true
-  memory: 4G
+  jvm:
+    memory: 4G
 
 modpack:
   platform: github

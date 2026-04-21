@@ -2,9 +2,9 @@
 
 import stat
 
+from mc_helper.config import JvmConfig, ServerConfig
 from mc_helper.launch import (
     LaunchPlan,
-    _cf_memory_mb,
     _merge_user_jvm_args,
     _patch_cf_settings_cfg,
     _patch_cf_settings_local,
@@ -12,6 +12,15 @@ from mc_helper.launch import (
     apply_launch_plan,
     detect_launch_plan,
 )
+
+
+def _server(memory: str = "2G", java_bin: str = "java", **jvm_extra) -> ServerConfig:
+    """Build a minimal ServerConfig for launch tests."""
+    return ServerConfig(
+        type="vanilla",
+        jvm=JvmConfig(memory=memory, java_bin=java_bin, **jvm_extra),
+    )
+
 
 # ── detect_launch_plan ────────────────────────────────────────────────────────
 
@@ -80,14 +89,14 @@ class TestApplyJar:
 
     def test_launch_sh_content(self, tmp_path):
         plan = self._plan(tmp_path)
-        apply_launch_plan(plan, tmp_path, "2G", [], ["nogui"], "java", dry_run=False)
+        apply_launch_plan(plan, _server("2G"), tmp_path, dry_run=False)
         content = (tmp_path / "launch.sh").read_text()
         assert "java -Xmx2G -Xms2G -jar server.jar nogui" in content
 
     def test_launch_sh_with_jvm_args(self, tmp_path):
         plan = self._plan(tmp_path)
         apply_launch_plan(
-            plan, tmp_path, "4G", ["-Dfoo=bar", "-XX:+UseG1GC"], ["nogui"], "java", dry_run=False
+            plan, _server("4G", args=["-Dfoo=bar", "-XX:+UseG1GC"]), tmp_path, dry_run=False
         )
         content = (tmp_path / "launch.sh").read_text()
         assert "-Dfoo=bar" in content
@@ -96,7 +105,8 @@ class TestApplyJar:
 
     def test_launch_sh_custom_server_args(self, tmp_path):
         plan = self._plan(tmp_path)
-        apply_launch_plan(plan, tmp_path, "2G", [], ["--noconsole"], "java", dry_run=False)
+        server = ServerConfig(type="vanilla", server_args=["--noconsole"])
+        apply_launch_plan(plan, server, tmp_path, dry_run=False)
         content = (tmp_path / "launch.sh").read_text()
         assert "--noconsole" in content
         assert "nogui" not in content
@@ -105,20 +115,20 @@ class TestApplyJar:
     def test_launch_sh_custom_java_bin(self, tmp_path):
         plan = self._plan(tmp_path)
         apply_launch_plan(
-            plan, tmp_path, "2G", [], ["nogui"], "/opt/java21/bin/java", dry_run=False
+            plan, _server("2G", java_bin="/opt/java21/bin/java"), tmp_path, dry_run=False
         )
         content = (tmp_path / "launch.sh").read_text()
         assert content.startswith("#!/bin/sh\nexec /opt/java21/bin/java")
 
     def test_launch_sh_is_executable(self, tmp_path):
         plan = self._plan(tmp_path)
-        apply_launch_plan(plan, tmp_path, "2G", [], ["nogui"], "java", dry_run=False)
+        apply_launch_plan(plan, _server(), tmp_path, dry_run=False)
         mode = (tmp_path / "launch.sh").stat().st_mode
         assert mode & stat.S_IXUSR
 
     def test_dry_run_prints_no_files_written(self, tmp_path, capsys):
         plan = self._plan(tmp_path)
-        apply_launch_plan(plan, tmp_path, "2G", [], ["nogui"], "java", dry_run=True)
+        apply_launch_plan(plan, _server(), tmp_path, dry_run=True)
         assert not (tmp_path / "launch.sh").exists()
         assert "[dry-run]" in capsys.readouterr().out
 
@@ -134,27 +144,27 @@ class TestApplyRunSh:
 
     def test_launch_sh_execs_run_sh(self, tmp_path):
         plan = self._plan(tmp_path)
-        apply_launch_plan(plan, tmp_path, "4G", [], [], "java", dry_run=False)
+        apply_launch_plan(plan, _server("4G"), tmp_path, dry_run=False)
         content = (tmp_path / "launch.sh").read_text()
         assert "./run.sh" in content
         assert "java" not in content
 
     def test_user_jvm_args_created_with_memory(self, tmp_path):
         plan = self._plan(tmp_path)
-        apply_launch_plan(plan, tmp_path, "4G", [], [], "java", dry_run=False)
+        apply_launch_plan(plan, _server("4G"), tmp_path, dry_run=False)
         lines = (tmp_path / "user_jvm_args.txt").read_text().splitlines()
         assert "-Xmx4G" in lines
         assert "-Xms4G" in lines
 
     def test_user_jvm_args_includes_extra_flags(self, tmp_path):
         plan = self._plan(tmp_path)
-        apply_launch_plan(plan, tmp_path, "4G", ["-Dfoo=bar"], [], "java", dry_run=False)
+        apply_launch_plan(plan, _server("4G", args=["-Dfoo=bar"]), tmp_path, dry_run=False)
         lines = (tmp_path / "user_jvm_args.txt").read_text().splitlines()
         assert "-Dfoo=bar" in lines
 
     def test_dry_run_no_files(self, tmp_path, capsys):
         plan = self._plan(tmp_path)
-        apply_launch_plan(plan, tmp_path, "2G", [], [], "java", dry_run=True)
+        apply_launch_plan(plan, _server("2G"), tmp_path, dry_run=True)
         assert not (tmp_path / "launch.sh").exists()
         assert not (tmp_path / "user_jvm_args.txt").exists()
 
@@ -172,7 +182,7 @@ class TestApplyCfScript:
         sl = tmp_path / "settings-local.sh"
         sl.write_text("MIN_RAM=2048M\nMAX_RAM=2048M\nJAVA_PARAMETERS=\n")
         plan = self._plan(tmp_path, [sl])
-        apply_launch_plan(plan, tmp_path, "8G", ["-Dfoo=bar"], [], "java", dry_run=False)
+        apply_launch_plan(plan, _server("8G", args=["-Dfoo=bar"]), tmp_path, dry_run=False)
         content = sl.read_text()
         assert "MIN_RAM=8192M" in content
         assert "MAX_RAM=8192M" in content
@@ -182,21 +192,21 @@ class TestApplyCfScript:
         sc = tmp_path / "settings.cfg"
         sc.write_text("MAX_RAM=2048M\n")
         plan = self._plan(tmp_path, [sc])
-        apply_launch_plan(plan, tmp_path, "4G", [], [], "java", dry_run=False)
+        apply_launch_plan(plan, _server("4G"), tmp_path, dry_run=False)
         assert "MAX_RAM=4096M" in sc.read_text()
 
     def test_patches_variables_txt(self, tmp_path):
         vt = tmp_path / "variables.txt"
         vt.write_text('JAVA_ARGS=""\n')
         plan = self._plan(tmp_path, [vt])
-        apply_launch_plan(plan, tmp_path, "2G", ["-Dfoo=bar"], [], "java", dry_run=False)
+        apply_launch_plan(plan, _server("2G", args=["-Dfoo=bar"]), tmp_path, dry_run=False)
         assert 'JAVA_ARGS="-Dfoo=bar"' in vt.read_text()
 
     def test_launch_sh_execs_start_script(self, tmp_path):
         sl = tmp_path / "settings-local.sh"
         sl.write_text("")
         plan = self._plan(tmp_path, [sl])
-        apply_launch_plan(plan, tmp_path, "2G", [], [], "java", dry_run=False)
+        apply_launch_plan(plan, _server("2G"), tmp_path, dry_run=False)
         content = (tmp_path / "launch.sh").read_text()
         assert "./ServerStart.sh" in content
 
@@ -300,23 +310,3 @@ class TestPatchCfVariables:
         path.write_text("OTHER=val\n")
         _patch_cf_variables(path, ["-Dfoo=bar"], dry_run=False)
         assert 'JAVA_ARGS="-Dfoo=bar"' in path.read_text()
-
-
-# ── _cf_memory_mb ─────────────────────────────────────────────────────────────
-
-
-class TestCfMemoryMb:
-    def test_gigabytes(self):
-        assert _cf_memory_mb("4G") == "4096"
-
-    def test_gigabytes_lowercase(self):
-        assert _cf_memory_mb("4g") == "4096"
-
-    def test_megabytes(self):
-        assert _cf_memory_mb("2048M") == "2048"
-
-    def test_megabytes_lowercase(self):
-        assert _cf_memory_mb("2048m") == "2048"
-
-    def test_passthrough(self):
-        assert _cf_memory_mb("4096") == "4096"

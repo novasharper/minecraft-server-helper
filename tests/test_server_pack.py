@@ -8,16 +8,27 @@ from io import BytesIO
 import pytest
 import responses as rsps_lib
 
+from mc_helper.config import GithubSource, ModpackConfig, UrlSource
+from mc_helper.github_release import resolve_github_url
 from mc_helper.http_client import build_session
-from mc_helper.modpack.custom import (
-    ServerPackInstaller,
-    _extract_tar,
-    _extract_zip,
-    _resolve_github_url,
-    _sha1_file,
-)
+from mc_helper.modpack._archives import extract_tar, extract_zip, sha1_file
+from mc_helper.modpack.custom import ServerPackInstaller
 
 # ── helpers ───────────────────────────────────────────────────────────────────
+
+
+def _make_url_installer(url: str, session=None, show_progress: bool = False, **source_kwargs):
+    source = UrlSource(url=url, **source_kwargs)
+    modpack = ModpackConfig(platform="url", source=source)
+    return ServerPackInstaller(source, modpack, session=session, show_progress=show_progress)
+
+
+def _make_github_installer(
+    repo: str, asset: str | None = None, session=None, show_progress: bool = False, **source_kwargs
+):
+    source = GithubSource(repo=repo, asset=asset, **source_kwargs)
+    modpack = ModpackConfig(platform="github", source=source)
+    return ServerPackInstaller(source, modpack, session=session, show_progress=show_progress)
 
 
 def _make_zip(entries: dict[str, bytes]) -> bytes:
@@ -47,24 +58,24 @@ def _asset(name: str, url: str) -> dict:
     return {"name": name, "browser_download_url": url}
 
 
-# ── _sha1_file ────────────────────────────────────────────────────────────────
+# ── sha1_file ─────────────────────────────────────────────────────────────────
 
 
 def test_sha1_file(tmp_path):
     data = b"hello world"
     f = tmp_path / "test.bin"
     f.write_bytes(data)
-    assert _sha1_file(f) == hashlib.sha1(data).hexdigest()
+    assert sha1_file(f) == hashlib.sha1(data).hexdigest()
 
 
-# ── _extract_zip ──────────────────────────────────────────────────────────────
+# ── extract_zip ───────────────────────────────────────────────────────────────
 
 
 def test_extract_zip_no_strip(tmp_path):
     archive = tmp_path / "pack.zip"
     archive.write_bytes(_make_zip({"mods/jei.jar": b"jar", "config/a.cfg": b"cfg"}))
     dest = tmp_path / "out"
-    _extract_zip(archive, dest, strip_components=0)
+    extract_zip(archive, dest, strip_components=0)
     assert (dest / "mods" / "jei.jar").read_bytes() == b"jar"
     assert (dest / "config" / "a.cfg").read_bytes() == b"cfg"
 
@@ -73,7 +84,7 @@ def test_extract_zip_strip_one(tmp_path):
     archive = tmp_path / "pack.zip"
     archive.write_bytes(_make_zip({"server/mods/jei.jar": b"jar"}))
     dest = tmp_path / "out"
-    _extract_zip(archive, dest, strip_components=1)
+    extract_zip(archive, dest, strip_components=1)
     assert (dest / "mods" / "jei.jar").read_bytes() == b"jar"
 
 
@@ -81,19 +92,19 @@ def test_extract_zip_strip_skips_shallow_entries(tmp_path):
     archive = tmp_path / "pack.zip"
     archive.write_bytes(_make_zip({"root-file.txt": b"root", "sub/file.txt": b"sub"}))
     dest = tmp_path / "out"
-    _extract_zip(archive, dest, strip_components=1)
+    extract_zip(archive, dest, strip_components=1)
     assert not (dest / "root-file.txt").exists()
     assert (dest / "file.txt").read_bytes() == b"sub"
 
 
-# ── _extract_tar ──────────────────────────────────────────────────────────────
+# ── extract_tar ───────────────────────────────────────────────────────────────
 
 
 def test_extract_tar_no_strip(tmp_path):
     archive = tmp_path / "pack.tar.gz"
     archive.write_bytes(_make_tar_gz({"mods/mod.jar": b"jar"}))
     dest = tmp_path / "out"
-    _extract_tar(archive, dest, strip_components=0)
+    extract_tar(archive, dest, strip_components=0)
     assert (dest / "mods" / "mod.jar").read_bytes() == b"jar"
 
 
@@ -101,11 +112,11 @@ def test_extract_tar_strip_one(tmp_path):
     archive = tmp_path / "pack.tar.gz"
     archive.write_bytes(_make_tar_gz({"server/mods/mod.jar": b"jar"}))
     dest = tmp_path / "out"
-    _extract_tar(archive, dest, strip_components=1)
+    extract_tar(archive, dest, strip_components=1)
     assert (dest / "mods" / "mod.jar").read_bytes() == b"jar"
 
 
-# ── _resolve_github_url ───────────────────────────────────────────────────────
+# ── resolve_github_url ────────────────────────────────────────────────────────
 
 
 @rsps_lib.activate
@@ -116,7 +127,7 @@ def test_resolve_github_latest():
         json=_github_release([_asset("server.zip", "https://example.com/server.zip")]),
     )
     session = build_session()
-    url = _resolve_github_url(session, "owner/repo", "LATEST", None)
+    url = resolve_github_url(session, "owner/repo", "LATEST", None)
     assert url == "https://example.com/server.zip"
 
 
@@ -128,7 +139,7 @@ def test_resolve_github_specific_tag():
         json=_github_release([_asset("server.zip", "https://example.com/v2/server.zip")]),
     )
     session = build_session()
-    url = _resolve_github_url(session, "owner/repo", "v2.0", None)
+    url = resolve_github_url(session, "owner/repo", "v2.0", None)
     assert url == "https://example.com/v2/server.zip"
 
 
@@ -145,7 +156,7 @@ def test_resolve_github_asset_glob():
         ),
     )
     session = build_session()
-    url = _resolve_github_url(session, "owner/repo", "LATEST", "*server*")
+    url = resolve_github_url(session, "owner/repo", "LATEST", "*server*")
     assert url == "https://example.com/server.zip"
 
 
@@ -158,7 +169,7 @@ def test_resolve_github_no_matching_asset_raises():
     )
     session = build_session()
     with pytest.raises(ValueError, match="No asset matching"):
-        _resolve_github_url(session, "owner/repo", "LATEST", "*server*")
+        resolve_github_url(session, "owner/repo", "LATEST", "*server*")
 
 
 # ── install ───────────────────────────────────────────────────────────────────
@@ -170,9 +181,7 @@ def test_install_direct_url_zip(tmp_path):
     rsps_lib.add(rsps_lib.GET, "https://example.com/pack.zip", body=zip_bytes)
 
     session = build_session()
-    ServerPackInstaller(
-        url="https://example.com/pack.zip", session=session, show_progress=False
-    ).install(tmp_path)
+    _make_url_installer("https://example.com/pack.zip", session=session).install(tmp_path)
 
     assert (tmp_path / "mods" / "jei.jar").read_bytes() == b"jar-data"
     assert (tmp_path / "config" / "a.cfg").read_bytes() == b"cfg"
@@ -184,9 +193,7 @@ def test_install_direct_url_tar_gz(tmp_path):
     rsps_lib.add(rsps_lib.GET, "https://example.com/pack.tar.gz", body=tar_bytes)
 
     session = build_session()
-    ServerPackInstaller(
-        url="https://example.com/pack.tar.gz", session=session, show_progress=False
-    ).install(tmp_path)
+    _make_url_installer("https://example.com/pack.tar.gz", session=session).install(tmp_path)
 
     assert (tmp_path / "mods" / "mod.jar").read_bytes() == b"jar-data"
 
@@ -202,9 +209,7 @@ def test_install_github(tmp_path):
     rsps_lib.add(rsps_lib.GET, "https://example.com/server.zip", body=zip_bytes)
 
     session = build_session()
-    ServerPackInstaller(
-        github="owner/repo", asset="*server*", session=session, show_progress=False
-    ).install(tmp_path)
+    _make_github_installer("owner/repo", asset="*server*", session=session).install(tmp_path)
 
     assert (tmp_path / "mods" / "mod.jar").read_bytes() == b"jar"
 
@@ -224,9 +229,7 @@ def test_install_skips_if_sha1_matches(tmp_path):
     rsps_lib.add(rsps_lib.GET, "https://example.com/pack.zip", body=zip_bytes)
 
     session = build_session()
-    ServerPackInstaller(
-        url="https://example.com/pack.zip", session=session, show_progress=False
-    ).install(tmp_path)
+    _make_url_installer("https://example.com/pack.zip", session=session).install(tmp_path)
 
     # File should NOT be extracted since sha1 matches
     assert not (tmp_path / "mods" / "mod.jar").exists()
@@ -246,12 +249,9 @@ def test_install_force_update_ignores_sha1(tmp_path):
     rsps_lib.add(rsps_lib.GET, "https://example.com/pack.zip", body=zip_bytes)
 
     session = build_session()
-    ServerPackInstaller(
-        url="https://example.com/pack.zip",
-        force_update=True,
-        session=session,
-        show_progress=False,
-    ).install(tmp_path)
+    _make_url_installer("https://example.com/pack.zip", force_update=True, session=session).install(
+        tmp_path
+    )
 
     assert (tmp_path / "mods" / "mod.jar").read_bytes() == b"jar"
 
@@ -261,19 +261,11 @@ def test_install_disable_mods(tmp_path):
     zip_bytes = _make_zip({"mods/optifine.jar": b"jar", "mods/other.jar": b"other"})
     rsps_lib.add(rsps_lib.GET, "https://example.com/pack.zip", body=zip_bytes)
 
+    source = UrlSource(url="https://example.com/pack.zip")
+    modpack = ModpackConfig(platform="url", source=source, exclude_mods=["optifine.jar"])
     session = build_session()
-    ServerPackInstaller(
-        url="https://example.com/pack.zip",
-        exclude_mods=["optifine.jar"],
-        session=session,
-        show_progress=False,
-    ).install(tmp_path)
+    ServerPackInstaller(source, modpack, session=session, show_progress=False).install(tmp_path)
 
     assert not (tmp_path / "mods" / "optifine.jar").exists()
     assert (tmp_path / "mods" / "optifine.jar.disabled").exists()
     assert (tmp_path / "mods" / "other.jar").exists()
-
-
-def test_install_no_source_raises(tmp_path):
-    with pytest.raises(ValueError, match="Either url or github"):
-        ServerPackInstaller(show_progress=False).install(tmp_path)

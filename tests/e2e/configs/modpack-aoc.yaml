@@ -4,7 +4,8 @@
 server:
   output_dir: ${E2E_OUTPUT_DIR}/aoc
   eula: true
-  memory: 4G
+  jvm:
+    memory: 4G
 
 modpack:
   platform: curseforge

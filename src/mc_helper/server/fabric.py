@@ -10,50 +10,43 @@ from pathlib import Path
 
 import requests
 
-from mc_helper.http_client import build_session, download_file, get_json
+from mc_helper.config import ServerConfig
+from mc_helper.http_client import download_file, get_json
+
+from .base import ServerInstaller
 
 log = logging.getLogger(__name__)
 
 _META_BASE = "https://meta.fabricmc.net"
 
 
-class FabricInstaller:
+class FabricInstaller(ServerInstaller):
     """Downloads the Fabric server launcher JAR."""
 
     def __init__(
         self,
-        minecraft_version: str,
-        loader_version: str = "LATEST",
-        installer_version: str = "LATEST",
+        config: ServerConfig,
         session: requests.Session | None = None,
         show_progress: bool = True,
     ) -> None:
-        self.minecraft_version = minecraft_version
-        self.loader_version = loader_version
-        self.installer_version = installer_version
-        self.session = session or build_session()
-        self.show_progress = show_progress
+        super().__init__(config, session=session, show_progress=show_progress)
 
     def _resolve_loader_version(self) -> str:
-        if self.loader_version.upper() != "LATEST":
-            return self.loader_version
-        versions = get_json(
-            self.session, f"{_META_BASE}/v2/versions/loader/{self.minecraft_version}"
-        )
-        stable = [v for v in versions if v.get("loader", {}).get("stable")]
-        candidates = stable or list(versions)  # fall back to all if none marked stable
+        loader_version = self.config.loader_version
+        if loader_version.upper() != "LATEST":
+            return loader_version
+        mc = self.config.minecraft_version
+        versions = get_json(self.session, f"{_META_BASE}/v2/versions/loader/{mc}")
+        stable = [v for v in versions if v.get("loader", {}).get("stable")]  # type: ignore[union-attr]
+        candidates = stable or list(versions)  # type: ignore[arg-type]
         if not candidates:
-            raise ValueError(
-                f"No Fabric loader versions found for Minecraft {self.minecraft_version}"
-            )
+            raise ValueError(f"No Fabric loader versions found for Minecraft {mc}")
         return candidates[0]["loader"]["version"]
 
     def _resolve_installer_version(self) -> str:
-        if self.installer_version.upper() != "LATEST":
-            return self.installer_version
         versions = get_json(self.session, f"{_META_BASE}/v2/versions/installer")
-        stable = [v for v in versions if v.get("stable")]
-        candidates = stable or list(versions)
+        stable = [v for v in versions if v.get("stable")]  # type: ignore[union-attr]
+        candidates = stable or list(versions)  # type: ignore[arg-type]
         if not candidates:
             raise ValueError("No Fabric installer versions found")
         return candidates[0]["version"]
@@ -67,9 +60,10 @@ class FabricInstaller:
         resolved_installer = self._resolve_installer_version()
         log.info("Resolved Fabric loader %s, installer %s", resolved_loader, resolved_installer)
 
+        mc = self.config.minecraft_version
         url = (
             f"{_META_BASE}/v2/versions/loader"
-            f"/{self.minecraft_version}/{resolved_loader}/{resolved_installer}/server/jar"
+            f"/{mc}/{resolved_loader}/{resolved_installer}/server/jar"
         )
 
         dest = output_dir / "fabric-server-launch.jar"

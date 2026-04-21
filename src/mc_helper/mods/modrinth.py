@@ -15,18 +15,7 @@ from pathlib import Path
 import requests
 
 from mc_helper.http_client import build_session, download_file
-from mc_helper.modpack.modrinth import resolve_version
-
-
-def _pick_primary_file(version: dict) -> tuple[str, str, str | None, str | None]:
-    """Return (url, filename, sha1_or_None, sha512_or_None) for the primary or first file."""
-    for f in version.get("files", []):
-        if f.get("primary"):
-            hashes = f.get("hashes", {})
-            return f["url"], f["filename"], hashes.get("sha1"), hashes.get("sha512")
-    f = version["files"][0]
-    hashes = f.get("hashes", {})
-    return f["url"], f["filename"], hashes.get("sha1"), hashes.get("sha512")
+from mc_helper.modrinth_api import pick_primary_file, resolve_version
 
 
 class ModrinthModInstaller:
@@ -80,13 +69,12 @@ class ModrinthModInstaller:
             requested_version,
         )
 
-        # Guard against cycles / duplicate downloads
         project_id = version.get("project_id", project)
         if project_id in installed_projects:
-            return str(Path("mods") / _pick_primary_file(version)[1])
+            return str(Path("mods") / pick_primary_file(version)[1])
         installed_projects.add(project_id)
 
-        url, filename, sha1, sha512 = _pick_primary_file(version)
+        url, filename, sha1, sha512 = pick_primary_file(version)
         dest = output_dir / "mods" / filename
         effective_sha1 = sha1 if not sha512 else None
         download_file(
@@ -98,7 +86,6 @@ class ModrinthModInstaller:
             show_progress=self.show_progress,
         )
 
-        # Recursively install required dependencies
         for dep in version.get("dependencies", []):
             if dep.get("dependency_type") != "required":
                 continue

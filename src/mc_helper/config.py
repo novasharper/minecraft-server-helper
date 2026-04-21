@@ -44,25 +44,29 @@ def load_config(path: str | Path) -> "RootConfig":
 ServerType = Literal["vanilla", "forge", "neoforge", "fabric", "paper", "purpur"]
 
 
+class JvmConfig(BaseModel):
+    memory: str = "1G"
+    java_bin: str = "java"
+    args: list[str] = Field(default_factory=list)
+    xx_opts: list[str] = Field(default_factory=list)
+    opts: list[str] = Field(default_factory=list)
+    dd_opts: dict[str, str] = Field(default_factory=dict)
+    use_aikar_flags: bool = False
+    use_meowice_flags: bool = False
+    use_meowice_graalvm_flags: bool = False
+    use_flare_flags: bool = False
+    use_simd_flags: bool = False
+
+
 class ServerConfig(BaseModel):
     type: Optional[ServerType] = None
     minecraft_version: Optional[str] = None
     loader_version: str = "LATEST"
     output_dir: Path = Path("./server")
     eula: bool = False
-    memory: str = "1G"
     properties: dict[str, str | int | bool] = Field(default_factory=dict)
-    jvm_args: list[str] = Field(default_factory=list)
-    jvm_xx_opts: list[str] = Field(default_factory=list)
-    jvm_opts: list[str] = Field(default_factory=list)
-    jvm_dd_opts: dict[str, str] = Field(default_factory=dict)
     server_args: list[str] = Field(default_factory=lambda: ["nogui"])
-    java_bin: str = "java"
-    use_aikar_flags: bool = False
-    use_meowice_flags: bool = False
-    use_meowice_graalvm_flags: bool = False
-    use_flare_flags: bool = False
-    use_simd_flags: bool = False
+    jvm: JvmConfig = Field(default_factory=JvmConfig)
 
 
 # ── Modpack ───────────────────────────────────────────────────────────────────

@@ -16,13 +16,15 @@ Workflow:
 """
 
 import logging
-import subprocess
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import requests
 
-from mc_helper.http_client import build_session, download_file
+from mc_helper.config import ServerConfig
+from mc_helper.http_client import download_file
+
+from .base import ServerInstaller, run_java_installer
 
 log = logging.getLogger(__name__)
 
@@ -53,46 +55,44 @@ def _installer_url(minecraft_version: str, neoforge_version: str) -> str:
     return f"{_MAVEN_BASE}/{_GROUP_PATH}/{artifact}" f"/{ver}/{artifact}-{ver}-installer.jar"
 
 
-class NeoForgeInstaller:
+class NeoForgeInstaller(ServerInstaller):
     """Downloads and runs the NeoForge server installer."""
 
     def __init__(
         self,
-        minecraft_version: str,
-        neoforge_version: str = "LATEST",
+        config: ServerConfig,
         session: requests.Session | None = None,
         show_progress: bool = True,
     ) -> None:
-        self.minecraft_version = minecraft_version
-        self.neoforge_version = neoforge_version
-        self.session = session or build_session()
-        self.show_progress = show_progress
+        super().__init__(config, session=session, show_progress=show_progress)
 
     def _list_versions(self) -> list[str]:
-        resp = self.session.get(_maven_metadata_url(self.minecraft_version), timeout=30)
+        mc = self.config.minecraft_version
+        resp = self.session.get(_maven_metadata_url(mc), timeout=30)
         resp.raise_for_status()
         root = ET.fromstring(resp.text)
         return [v.text for v in root.findall(".//versions/version") if v.text]
 
     def _resolve_neoforge_version(self) -> str:
         """Resolve LATEST (or None) to a concrete NeoForge version."""
-        if self.neoforge_version and self.neoforge_version.upper() != "LATEST":
-            return self.neoforge_version
+        neoforge_version = self.config.loader_version
+        if neoforge_version and neoforge_version.upper() != "LATEST":
+            return neoforge_version
 
+        mc = self.config.minecraft_version
         versions = self._list_versions()
         if not versions:
-            raise ValueError(f"No NeoForge versions found for Minecraft {self.minecraft_version}")
+            raise ValueError(f"No NeoForge versions found for Minecraft {mc}")
 
         # Build version prefix: NeoForge uses "{mc_minor}.{mc_patch}.x" format.
         # e.g. MC 1.21.1 → NeoForge 21.1.x; MC 1.21 → NeoForge 21.0.x
         mc_prefix: str | None = None
-        if not _use_forge_artifact(self.minecraft_version):
-            parts = self.minecraft_version.split(".")
+        if not _use_forge_artifact(mc):
+            parts = mc.split(".")
             mc_minor = parts[1] if len(parts) > 1 else "0"
             mc_patch = parts[2] if len(parts) > 2 else "0"
             mc_prefix = f"{mc_minor}.{mc_patch}."
 
-        # Filter to versions matching the exact MC minor+patch series
         if mc_prefix:
             matching = [v for v in versions if v.startswith(mc_prefix)]
             if matching:
@@ -105,22 +105,13 @@ class NeoForgeInstaller:
 
         Returns the path to ``run.sh`` created by the NeoForge installer.
         """
+        mc = self.config.minecraft_version
         resolved = self._resolve_neoforge_version()
         log.info("Resolved NeoForge version: %s", resolved)
-        url = _installer_url(self.minecraft_version, resolved)
+        url = _installer_url(mc, resolved)
 
         installer_jar = output_dir / f"neoforge-{resolved}-installer.jar"
         log.debug("Downloading NeoForge installer: %s", url)
         download_file(url, installer_jar, session=self.session, show_progress=self.show_progress)
-
         log.info("Running NeoForge installer (this may take a while)...")
-        try:
-            subprocess.run(
-                ["java", "-jar", str(installer_jar), "--installServer"],
-                cwd=output_dir,
-                check=True,
-            )
-        finally:
-            installer_jar.unlink(missing_ok=True)
-
-        return output_dir / "run.sh"
+        return run_java_installer(installer_jar, output_dir)

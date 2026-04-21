@@ -9,69 +9,62 @@ from pathlib import Path
 
 import requests
 
-from mc_helper.http_client import build_session, download_file
+from mc_helper.config import ServerConfig
+from mc_helper.http_client import download_file, get_json
+
+from .base import ServerInstaller
 
 log = logging.getLogger(__name__)
 
 _VERSION_MANIFEST_URL = "https://launchermeta.mojang.com/mc/game/version_manifest.json"
 
 
-class VanillaInstaller:
+def resolve_version(session: requests.Session, requested: str) -> str:
+    """Resolve 'LATEST', 'SNAPSHOT', or a specific version string to a concrete version ID."""
+    manifest = get_json(session, _VERSION_MANIFEST_URL)
+    normalized = requested.upper()
+
+    if normalized == "LATEST":
+        return manifest["latest"]["release"]  # type: ignore[index]
+    if normalized == "SNAPSHOT":
+        return manifest["latest"]["snapshot"]  # type: ignore[index]
+
+    ids = {v["id"] for v in manifest["versions"]}  # type: ignore[index]
+    if requested not in ids:
+        raise ValueError(f"Minecraft version '{requested}' not found in version manifest")
+    return requested
+
+
+class VanillaInstaller(ServerInstaller):
     """Downloads the vanilla Minecraft server JAR."""
 
     def __init__(
         self,
-        minecraft_version: str,
+        config: ServerConfig,
         session: requests.Session | None = None,
         show_progress: bool = True,
     ) -> None:
-        self.minecraft_version = minecraft_version
-        self.session = session or build_session()
-        self.show_progress = show_progress
-
-    def _get_manifest(self) -> dict:
-        resp = self.session.get(_VERSION_MANIFEST_URL, timeout=30)
-        resp.raise_for_status()
-        return resp.json()
+        super().__init__(config, session=session, show_progress=show_progress)
 
     def resolve_version(self) -> str:
-        """Resolve 'LATEST', 'SNAPSHOT', or a specific version string to a concrete version ID."""
-        manifest = self._get_manifest()
-        normalized = self.minecraft_version.upper()
-
-        if normalized == "LATEST":
-            return manifest["latest"]["release"]
-        if normalized == "SNAPSHOT":
-            return manifest["latest"]["snapshot"]
-
-        ids = {v["id"] for v in manifest["versions"]}
-        if self.minecraft_version not in ids:
-            raise ValueError(
-                f"Minecraft version '{self.minecraft_version}' not found in version manifest"
-            )
-        return self.minecraft_version
+        """Resolve 'LATEST', 'SNAPSHOT', or a specific version to a concrete version ID."""
+        return resolve_version(self.session, self.config.minecraft_version or "LATEST")
 
     def install(self, output_dir: Path) -> Path:
         """Download the vanilla server JAR into *output_dir*.
 
-        Resolves 'LATEST' / 'SNAPSHOT' automatically.
         Returns the path to the downloaded JAR.
         """
         version = self.resolve_version()
         log.info("Resolved Minecraft version: %s", version)
 
-        # Find the version-specific manifest URL
-        manifest = self._get_manifest()
-        entry = next((v for v in manifest["versions"] if v["id"] == version), None)
+        manifest = get_json(self.session, _VERSION_MANIFEST_URL)
+        entry = next((v for v in manifest["versions"] if v["id"] == version), None)  # type: ignore[union-attr]
         if entry is None:
             raise ValueError(f"No manifest entry for version '{version}'")
 
-        # Fetch the version manifest to get the server download URL + sha1
-        resp = self.session.get(entry["url"], timeout=30)
-        resp.raise_for_status()
-        version_data = resp.json()
-
-        server_info = version_data.get("downloads", {}).get("server")
+        version_data = get_json(self.session, entry["url"])
+        server_info = version_data.get("downloads", {}).get("server")  # type: ignore[union-attr]
         if not server_info:
             raise ValueError(f"No server download available for Minecraft {version}")
 
@@ -84,8 +77,3 @@ class VanillaInstaller:
             url, dest, session=self.session, expected_sha1=sha1, show_progress=self.show_progress
         )
         return dest
-
-
-def resolve_version(session: requests.Session, requested: str) -> str:
-    """Resolve 'LATEST', 'SNAPSHOT', or a specific version string to a concrete version ID."""
-    return VanillaInstaller(requested, session=session).resolve_version()

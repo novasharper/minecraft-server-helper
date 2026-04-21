@@ -20,7 +20,8 @@ from pathlib import Path
 
 import requests
 
-from mc_helper.http_client import build_session, download_file
+from mc_helper.config import FTBSource, ModpackConfig
+from mc_helper.http_client import build_session, download_with_mirrors
 from mc_helper.manifest import Manifest
 
 log = logging.getLogger(__name__)
@@ -43,36 +44,10 @@ def _ftb_get(url: str, api_key: str, session: requests.Session) -> dict:
 
 
 def _should_include(file_entry: dict, exclude_mods: list[str]) -> bool:
-    """Return True if the file should be downloaded (not client-only, not excluded)."""
     if file_entry.get("clientonly"):
         return False
     name = file_entry.get("name", "")
-    for pattern in exclude_mods:
-        if fnmatch.fnmatch(name, pattern):
-            return False
-    return True
-
-
-def _download_with_mirrors(
-    primary_url: str,
-    mirrors: list[str],
-    dest: Path,
-    session: requests.Session,
-    expected_sha1: str | None,
-) -> None:
-    """Try primary URL, then each mirror in order. Raises RuntimeError if all fail."""
-    urls = [primary_url, *mirrors]
-    last_exc: Exception | None = None
-    for url in urls:
-        try:
-            download_file(
-                url, dest, session=session, expected_sha1=expected_sha1, show_progress=False
-            )
-            return
-        except Exception as exc:
-            last_exc = exc
-            dest.unlink(missing_ok=True)
-    raise RuntimeError(f"All download URLs failed for {dest.name}") from last_exc
+    return not any(fnmatch.fnmatch(name, pattern) for pattern in exclude_mods)
 
 
 class FTBPackInstaller:
@@ -80,36 +55,33 @@ class FTBPackInstaller:
 
     def __init__(
         self,
-        pack_id: int,
-        version_id: int | None = None,
-        api_key: str = "public",
-        version_type: str = "release",
-        exclude_mods: list[str] | None = None,
+        source: FTBSource,
+        modpack: ModpackConfig,
         session: requests.Session | None = None,
         show_progress: bool = True,
     ) -> None:
-        self.pack_id = pack_id
-        self.version_id = version_id
-        self.api_key = api_key
-        self.version_type = version_type
-        self.exclude_mods = exclude_mods or []
+        self.source = source
+        self.modpack = modpack
         self.session = session or build_session()
         self.show_progress = show_progress
         self.recommended_memory_mb: int | None = None
 
+    def _api_key(self) -> str:
+        return self.source.api_key or "public"
+
     def _resolve_version_id(self) -> int:
-        """Return the version ID to install, fetching pack metadata if needed."""
-        if self.version_id is not None:
-            return self.version_id
-        data = _ftb_get(f"{_API_BASE}/modpack/{self.pack_id}", self.api_key, self.session)
+        if self.source.version_id is not None:
+            return self.source.version_id
+        data = _ftb_get(f"{_API_BASE}/modpack/{self.source.pack_id}", self._api_key(), self.session)
         versions = sorted(data.get("versions", []), key=lambda v: v["id"], reverse=True)
         for v in versions:
-            if v.get("type") == self.version_type:
+            if v.get("type") == self.source.version_type:
                 return int(v["id"])
         if versions:
             return int(versions[0]["id"])
         raise ValueError(
-            f"No versions found for FTB pack {self.pack_id} with type {self.version_type!r}"
+            f"No versions found for FTB pack {self.source.pack_id} "
+            f"with type {self.source.version_type!r}"
         )
 
     def install(self, output_dir: Path) -> None:
@@ -118,19 +90,17 @@ class FTBPackInstaller:
         manifest = Manifest(output_dir)
         manifest.load()
 
-        # 1+2. Resolve version ID
         version_id = self._resolve_version_id()
-        log.info("Resolved FTB pack %d version_id: %d", self.pack_id, version_id)
+        log.info("Resolved FTB pack %d version_id: %d", self.source.pack_id, version_id)
 
-        # 3. Fetch version detail
         detail = _ftb_get(
-            f"{_API_BASE}/modpack/{self.pack_id}/{version_id}", self.api_key, self.session
+            f"{_API_BASE}/modpack/{self.source.pack_id}/{version_id}", self._api_key(), self.session
         )
 
-        # 4. Parse targets and specs
         specs = detail.get("specs", {})
         if specs.get("recommended"):
             self.recommended_memory_mb = int(specs["recommended"])
+
         mc_version: str | None = None
         loader_type: str | None = None
         loader_version: str | None = None
@@ -141,23 +111,22 @@ class FTBPackInstaller:
                 loader_type = target.get("name")
                 loader_version = target.get("version")
 
-        # 5. Filter files
+        exclude_mods = self.modpack.exclude_mods or []
         all_files = detail.get("files", [])
-        files_to_download = [f for f in all_files if _should_include(f, self.exclude_mods)]
+        files_to_download = [f for f in all_files if _should_include(f, exclude_mods)]
         log.info(
             "Downloading %d file(s) (%d skipped as client-only/excluded)...",
             len(files_to_download),
             len(all_files) - len(files_to_download),
         )
 
-        # 6. Download files in parallel (individual progress bars suppressed; too noisy)
         new_files: list[str] = []
         errors: list[str] = []
         session = self.session
 
         def _download_entry(entry: dict) -> str:
             dest = output_dir / entry["path"] / entry["name"]
-            _download_with_mirrors(
+            download_with_mirrors(
                 entry["url"],
                 entry.get("mirrors", []),
                 dest,
@@ -178,8 +147,7 @@ class FTBPackInstaller:
         if errors:
             raise RuntimeError(f"{len(errors)} file(s) failed to download:\n" + "\n".join(errors))
 
-        # 7. Cleanup stale + save manifest
-        manifest.cleanup_stale(output_dir, new_files)
+        manifest.cleanup_stale(new_files)
         manifest.files = new_files
         if mc_version:
             manifest.mc_version = mc_version

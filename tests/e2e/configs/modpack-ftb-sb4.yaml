@@ -3,7 +3,8 @@
 server:
   output_dir: ${E2E_OUTPUT_DIR}/ftb-sb4
   eula: true
-  memory: 4G
+  jvm:
+    memory: 4G
 
 modpack:
   platform: ftb

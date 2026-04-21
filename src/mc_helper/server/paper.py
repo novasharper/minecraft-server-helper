@@ -14,35 +14,35 @@ from pathlib import Path
 
 import requests
 
-from mc_helper.http_client import build_session, download_file, get_json
+from mc_helper.config import ServerConfig
+from mc_helper.http_client import download_file, get_json
+
+from .base import ServerInstaller
 
 log = logging.getLogger(__name__)
 
 _API_BASE = "https://fill.papermc.io"
 
 
-class PaperInstaller:
+class PaperInstaller(ServerInstaller):
     """Downloads the latest PaperMC (or Folia/Waterfall) server JAR."""
 
     def __init__(
         self,
-        minecraft_version: str,
+        config: ServerConfig,
         project: str = "paper",
         session: requests.Session | None = None,
         show_progress: bool = True,
     ) -> None:
-        self.minecraft_version = minecraft_version
+        super().__init__(config, session=session, show_progress=show_progress)
         self.project = project
-        self.session = session or build_session()
-        self.show_progress = show_progress
 
     def _get_latest_build(self) -> dict:
-        """Return the latest build response dict for this project/version."""
         url = (
             f"{_API_BASE}/v3/projects/{self.project}"
-            f"/versions/{self.minecraft_version}/builds/latest"
+            f"/versions/{self.config.minecraft_version}/builds/latest"
         )
-        return get_json(self.session, url)
+        return get_json(self.session, url)  # type: ignore[return-value]
 
     def install(self, output_dir: Path) -> Path:
         """Download the latest Paper build into *output_dir*.
@@ -54,7 +54,7 @@ class PaperInstaller:
         if not download_info:
             raise ValueError(
                 f"No server download found in Paper build response for "
-                f"{self.project} {self.minecraft_version}"
+                f"{self.project} {self.config.minecraft_version}"
             )
 
         url = download_info["url"]

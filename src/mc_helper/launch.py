@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 
-from .config import ServerConfig
+from .config import JvmConfig, ServerConfig
 
 log = logging.getLogger(__name__)
 
@@ -73,35 +73,21 @@ def detect_launch_plan(output_dir: Path, start_artifact: Path) -> LaunchPlan:
 
 def apply_launch_plan(
     plan: LaunchPlan,
-    server_config: ServerConfig,
+    server: ServerConfig,
     output_dir: Path,
     dry_run: bool,
 ) -> None:
     """Write/patch launch configuration files according to *plan*."""
-    auto = _build_auto_jvm_args(
-        plan,
-        server.memory,
-        server.java_bin,
-        server.use_aikar_flags,
-        server.use_meowice_flags,
-        server.use_meowice_graalvm_flags,
-        server.use_flare_flags,
-        server.use_simd_flags,
-    )
-    expanded_dd = [f"-D{k}={v}" for k, v in (server.jvm_dd_opts or {}).items()]
-    # Assembly order mirrors Docker: auto → user jvm_xx_opts → user jvm_opts → DD opts → jvm_args
-    effective_jvm_args = (
-        auto
-        + list(server.jvm_xx_opts)
-        + list(server.jvm_opts)
-        + expanded_dd
-        + list(server.jvm_args)
-    )
+    jvm = server.jvm
+    auto = _build_auto_jvm_args(plan, jvm)
+    expanded_dd = [f"-D{k}={v}" for k, v in jvm.dd_opts.items()]
+    # Assembly order mirrors Docker: auto → user xx_opts → user opts → DD opts → args
+    effective_jvm_args = auto + list(jvm.xx_opts) + list(jvm.opts) + expanded_dd + list(jvm.args)
 
     if plan.kind == "run_sh":
-        _apply_run_sh(plan, output_dir, server.memory, effective_jvm_args, dry_run)
+        _apply_run_sh(plan, output_dir, jvm.memory, effective_jvm_args, dry_run)
     elif plan.kind == "cf_script":
-        _apply_cf_script(plan, output_dir, server.memory, effective_jvm_args, dry_run)
+        _apply_cf_script(plan, output_dir, jvm.memory, effective_jvm_args, dry_run)
     elif plan.kind == "bare_script":
         if effective_jvm_args:
             log.warning(
@@ -114,10 +100,10 @@ def apply_launch_plan(
         _write_jar_launch_sh(
             output_dir / "launch.sh",
             plan.start_artifact,
-            server.memory,
+            jvm.memory,
             effective_jvm_args,
             server.server_args,
-            server.java_bin,
+            jvm.java_bin,
             dry_run,
         )
 
@@ -163,17 +149,16 @@ def _mc_version_tuple(version: str) -> tuple[int, ...]:
     return tuple(parts)
 
 
-def _build_auto_jvm_args(
-    plan: LaunchPlan,
-    memory: str,
-    java_bin: str,
-    use_aikar_flags: bool,
-    use_meowice_flags: bool,
-    use_meowice_graalvm_flags: bool,
-    use_flare_flags: bool,
-    use_simd_flags: bool,
-) -> list[str]:
+def _build_auto_jvm_args(plan: LaunchPlan, jvm: JvmConfig) -> list[str]:
     """Build JVM args inferred from the installed server state and opt-in flag bundles."""
+    memory = jvm.memory
+    java_bin = jvm.java_bin
+    use_aikar_flags = jvm.use_aikar_flags
+    use_meowice_flags = jvm.use_meowice_flags
+    use_meowice_graalvm_flags = jvm.use_meowice_graalvm_flags
+    use_flare_flags = jvm.use_flare_flags
+    use_simd_flags = jvm.use_simd_flags
+
     args: list[str] = []
     gtnh = plan.loader_type == "gtnh"
 
@@ -449,16 +434,6 @@ def _apply_cf_script(
     _write_launch_sh(output_dir / "launch.sh", plan.start_artifact, dry_run)
 
 
-def _cf_memory_mb(memory: str) -> str:
-    """Convert '4G' or '4096M' to an integer MB string for CF settings files."""
-    s = memory.strip()
-    if s.upper().endswith("G"):
-        return str(int(s[:-1]) * 1024)
-    if s.upper().endswith("M"):
-        return s[:-1]
-    return s
-
-
 def _patch_key_value_file(
     path: Path,
     updates: dict[str, str],
@@ -496,7 +471,7 @@ def _patch_key_value_file(
 
 
 def _patch_cf_settings_local(path: Path, memory: str, jvm_args: list[str], dry_run: bool) -> None:
-    mb = _cf_memory_mb(memory)
+    mb = str(_parse_memory_mb(memory))
     _patch_key_value_file(
         path,
         {"MIN_RAM": f"{mb}M", "MAX_RAM": f"{mb}M", "JAVA_PARAMETERS": " ".join(jvm_args)},
@@ -505,7 +480,7 @@ def _patch_cf_settings_local(path: Path, memory: str, jvm_args: list[str], dry_r
 
 
 def _patch_cf_settings_cfg(path: Path, memory: str, dry_run: bool) -> None:
-    mb = _cf_memory_mb(memory)
+    mb = str(_parse_memory_mb(memory))
     _patch_key_value_file(path, {"MAX_RAM": f"{mb}M"}, dry_run)
 
 

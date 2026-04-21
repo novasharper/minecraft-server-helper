@@ -6,12 +6,23 @@ from io import BytesIO
 
 import responses as rsps_lib
 
+from mc_helper.config import ModpackConfig, ModrinthSource, ServerConfig
 from mc_helper.http_client import build_session
-from mc_helper.modpack.modrinth import ModrinthPackInstaller, _should_include, resolve_version
+from mc_helper.modpack.modrinth import ModrinthPackInstaller, _should_include
+from mc_helper.modrinth_api import resolve_version
 
 _API = "https://api.modrinth.com/v2"
 
 # ── helpers ───────────────────────────────────────────────────────────────────
+
+
+def _make_installer(project: str = "test-pack", session=None, show_progress: bool = False):
+    source = ModrinthSource(project=project)
+    server = ServerConfig()
+    modpack = ModpackConfig(platform="modrinth", source=source)
+    return ModrinthPackInstaller(
+        source, server, modpack, session=session, show_progress=show_progress
+    )
 
 
 def _make_version(version_type: str = "release", version_number: str = "1.0.0") -> dict:
@@ -50,46 +61,37 @@ def _minimal_index(files: list | None = None) -> dict:
 
 def test_should_include_server_unsupported():
     entry = {"path": "mods/client-only.jar", "env": {"server": "unsupported"}, "downloads": []}
-    assert _should_include(entry, []) is False
+    assert _should_include(entry, [], set(), set(), None) is False
 
 
 def test_should_include_server_required():
     entry = {"path": "mods/required.jar", "env": {"server": "required"}, "downloads": []}
-    assert _should_include(entry, []) is True
+    assert _should_include(entry, [], set(), set(), None) is True
 
 
 def test_should_include_no_env():
     entry = {"path": "mods/noenv.jar", "downloads": []}
-    assert _should_include(entry, []) is True
+    assert _should_include(entry, [], set(), set(), None) is True
 
 
 def test_should_include_excluded_by_name():
     entry = {"path": "mods/sodium.jar", "env": {"server": "required"}, "downloads": []}
-    assert _should_include(entry, ["sodium.jar"]) is False
+    assert _should_include(entry, ["sodium.jar"], set(), set(), None) is False
 
 
 def test_should_include_glob_exclusion():
     entry = {"path": "mods/sodium-0.6.0.jar", "env": {}, "downloads": []}
-    assert _should_include(entry, ["sodium*"]) is False
+    assert _should_include(entry, ["sodium*"], set(), set(), None) is False
 
 
 def test_should_include_global_slug_excluded():
     entry = {"path": "mods/sodium.jar", "env": {"server": "required"}, "downloads": []}
-    assert _should_include(entry, [], excluded_slugs={"sodium"}, project_slug="sodium") is False
+    assert _should_include(entry, [], {"sodium"}, set(), "sodium") is False
 
 
 def test_should_include_force_include_overrides_slug_exclude():
     entry = {"path": "mods/sodium.jar", "env": {"server": "required"}, "downloads": []}
-    assert (
-        _should_include(
-            entry,
-            [],
-            excluded_slugs={"sodium"},
-            force_include_slugs={"sodium"},
-            project_slug="sodium",
-        )
-        is True
-    )
+    assert _should_include(entry, [], {"sodium"}, {"sodium"}, "sodium") is True
 
 
 # ── resolve_version ───────────────────────────────────────────────────────────
@@ -154,9 +156,7 @@ def test_install_downloads_files(tmp_path):
     rsps_lib.add(rsps_lib.GET, "https://cdn.modrinth.com/fabric-api.jar", body=mod_bytes)
 
     session = build_session()
-    result = ModrinthPackInstaller("test-pack", session=session, show_progress=False).install(
-        tmp_path
-    )
+    result = _make_installer(session=session).install(tmp_path)
 
     assert result["name"] == "Test Pack"
     assert (tmp_path / "mods" / "fabric-api.jar").read_bytes() == mod_bytes
@@ -181,7 +181,7 @@ def test_install_skips_client_only(tmp_path):
     # client-only should NOT be downloaded — no mock registered for it
 
     session = build_session()
-    ModrinthPackInstaller("test-pack", session=session, show_progress=False).install(tmp_path)
+    _make_installer(session=session).install(tmp_path)
 
     assert not (tmp_path / "mods" / "client-only.jar").exists()
 
@@ -195,7 +195,7 @@ def test_install_extracts_overrides(tmp_path):
     rsps_lib.add(rsps_lib.GET, "https://cdn.modrinth.com/pack.mrpack", body=mrpack_bytes)
 
     session = build_session()
-    ModrinthPackInstaller("test-pack", session=session, show_progress=False).install(tmp_path)
+    _make_installer(session=session).install(tmp_path)
 
     assert (tmp_path / "config" / "server.cfg").read_bytes() == b"setting=true"
 
@@ -209,7 +209,7 @@ def test_install_writes_manifest(tmp_path):
     rsps_lib.add(rsps_lib.GET, "https://cdn.modrinth.com/pack.mrpack", body=mrpack_bytes)
 
     session = build_session()
-    ModrinthPackInstaller("test-pack", session=session, show_progress=False).install(tmp_path)
+    _make_installer(session=session).install(tmp_path)
 
     from mc_helper.manifest import Manifest
 
@@ -230,7 +230,7 @@ def test_install_normalizes_loader_type_fabric(tmp_path):
     rsps_lib.add(rsps_lib.GET, "https://cdn.modrinth.com/pack.mrpack", body=mrpack_bytes)
 
     session = build_session()
-    ModrinthPackInstaller("fabric-pack", session=session, show_progress=False).install(tmp_path)
+    _make_installer(project="fabric-pack", session=session).install(tmp_path)
 
     from mc_helper.manifest import Manifest
 
@@ -265,7 +265,7 @@ def test_install_prefers_sha512_over_sha1(tmp_path):
 
     session = build_session()
     # Should not raise even though sha1 is wrong — sha512 is used instead
-    ModrinthPackInstaller("sha-pack", session=session, show_progress=False).install(tmp_path)
+    _make_installer(project="sha-pack", session=session).install(tmp_path)
     assert (tmp_path / "mods" / "mod.jar").read_bytes() == mod_bytes
 
 
@@ -305,11 +305,11 @@ def test_install_global_slug_excludes_mod(tmp_path, monkeypatch):
 
     monkeypatch.setattr(
         mr_mod,
-        "_load_mr_filter",
-        lambda: {"globalExcludes": ["sodium"], "globalForceIncludes": [], "modpacks": {}},
+        "load_exclude_include",
+        lambda _kind: {"globalExcludes": ["sodium"], "globalForceIncludes": [], "modpacks": {}},
     )
 
     session = build_session()
-    ModrinthPackInstaller("test-pack", session=session, show_progress=False).install(tmp_path)
+    _make_installer(session=session).install(tmp_path)
 
     assert not (tmp_path / "mods" / "sodium-1.0.jar").exists()

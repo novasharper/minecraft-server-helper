@@ -19,28 +19,31 @@ def _write_config(tmp_path: Path, data: dict) -> Path:
 
 
 def _base_config(server_type: str = "vanilla", **extra) -> dict:
-    cfg: dict = {
-        "server": {
-            "type": server_type,
-            "minecraft_version": "1.21.1",
-            "output_dir": "PLACEHOLDER",  # overridden per test
-            "eula": True,
-            "memory": "2G",
-            "properties": {
-                "difficulty": "normal",
-                "max-players": 20,
-                "motd": "Test Server",
-            },
-        }
+    jvm: dict = {}
+    server: dict = {
+        "type": server_type,
+        "minecraft_version": "1.21.1",
+        "output_dir": "PLACEHOLDER",
+        "eula": True,
+        "properties": {
+            "difficulty": "normal",
+            "max-players": 20,
+            "motd": "Test Server",
+        },
     }
-    # jvm_args / server_args / java_bin are list/str — serialize separately
-    for key in ("jvm_args", "server_args"):
+    # JVM options live under server.jvm
+    for key in ("memory", "java_bin", "args"):
         if key in extra:
-            cfg["server"][key] = extra.pop(key)
+            jvm[key] = extra.pop(key)
+    # Backward-compat aliases for tests that use old names
+    if "jvm_args" in extra:
+        jvm["args"] = extra.pop("jvm_args")
     if "java_bin" in extra:
-        cfg["server"]["java_bin"] = extra.pop("java_bin")
-    cfg["server"].update(extra)
-    return cfg
+        jvm["java_bin"] = extra.pop("java_bin")
+    if jvm:
+        server["jvm"] = jvm
+    server.update(extra)
+    return {"server": server}
 
 
 # ── _write_server_files ───────────────────────────────────────────────────────
@@ -97,18 +100,18 @@ class TestWriteServerFiles:
     def test_launch_sh_with_jar(self, tmp_path):
         jar = tmp_path / "minecraft_server.1.21.1.jar"
         jar.touch()
-        self._call(_base_config(memory="4G"), tmp_path, jar_path=jar)
+        data = _base_config()
+        data["server"]["jvm"] = {"memory": "4G"}
+        self._call(data, tmp_path, jar_path=jar)
         content = (tmp_path / "launch.sh").read_text()
         assert "java -Xmx4G -Xms4G -jar minecraft_server.1.21.1.jar nogui" in content
 
     def test_launch_sh_jvm_args_in_jar_command(self, tmp_path):
         jar = tmp_path / "minecraft_server.jar"
         jar.touch()
-        self._call(
-            _base_config(memory="4G", jvm_args=["-Dfoo=bar", "-XX:+UseG1GC"]),
-            tmp_path,
-            jar_path=jar,
-        )
+        data = _base_config()
+        data["server"]["jvm"] = {"memory": "4G", "args": ["-Dfoo=bar", "-XX:+UseG1GC"]}
+        self._call(data, tmp_path, jar_path=jar)
         content = (tmp_path / "launch.sh").read_text()
         assert "-Dfoo=bar" in content
         assert "-XX:+UseG1GC" in content
@@ -118,7 +121,9 @@ class TestWriteServerFiles:
     def test_launch_sh_custom_server_args(self, tmp_path):
         jar = tmp_path / "minecraft_server.jar"
         jar.touch()
-        self._call(_base_config(server_args=["--noconsole"]), tmp_path, jar_path=jar)
+        data = _base_config()
+        data["server"]["server_args"] = ["--noconsole"]
+        self._call(data, tmp_path, jar_path=jar)
         content = (tmp_path / "launch.sh").read_text()
         assert "--noconsole" in content
         assert content.index("-jar") < content.index("--noconsole")
@@ -126,7 +131,9 @@ class TestWriteServerFiles:
     def test_launch_sh_custom_java_bin(self, tmp_path):
         jar = tmp_path / "minecraft_server.jar"
         jar.touch()
-        self._call(_base_config(java_bin="/opt/java21/bin/java"), tmp_path, jar_path=jar)
+        data = _base_config()
+        data["server"]["jvm"] = {"java_bin": "/opt/java21/bin/java"}
+        self._call(data, tmp_path, jar_path=jar)
         content = (tmp_path / "launch.sh").read_text()
         assert "/opt/java21/bin/java" in content
 
@@ -138,7 +145,9 @@ class TestWriteServerFiles:
     def test_launch_sh_forge_run_sh(self, tmp_path):
         run_sh = tmp_path / "run.sh"
         run_sh.write_text("#!/bin/sh\n")
-        self._call(_base_config(server_type="forge", memory="4G"), tmp_path, jar_path=run_sh)
+        data = _base_config(server_type="forge")
+        data["server"]["jvm"] = {"memory": "4G"}
+        self._call(data, tmp_path, jar_path=run_sh)
         content = (tmp_path / "launch.sh").read_text()
         assert "./run.sh" in content
         assert "java" not in content
@@ -147,11 +156,9 @@ class TestWriteServerFiles:
         run_sh = tmp_path / "run.sh"
         run_sh.write_text("#!/bin/sh\n")
         (tmp_path / "user_jvm_args.txt").write_text("-XX:+UseG1GC\n")
-        self._call(
-            _base_config(server_type="forge", memory="4G", jvm_args=["-Dfoo=bar"]),
-            tmp_path,
-            jar_path=run_sh,
-        )
+        data = _base_config(server_type="forge")
+        data["server"]["jvm"] = {"memory": "4G", "args": ["-Dfoo=bar"]}
+        self._call(data, tmp_path, jar_path=run_sh)
         content = (tmp_path / "user_jvm_args.txt").read_text()
         assert "-Xmx4G" in content
         assert "-Xms4G" in content
@@ -184,14 +191,13 @@ class TestWriteServerFiles:
             "# Another comment\n"
             "level-seed=abc123\n"
         )
-        # Config overrides difficulty and max-players; level-seed and comments untouched
         self._call(_base_config(), tmp_path)
         result = props_path.read_text()
         assert "# Minecraft server properties" in result
         assert "# Another comment" in result
         assert "level-seed=abc123" in result
-        assert "difficulty=normal" in result  # overwritten by config
-        assert "max-players=20" in result  # overwritten by config
+        assert "difficulty=normal" in result
+        assert "max-players=20" in result
 
     def test_server_properties_merge_appends_new_keys(self, tmp_path):
         """Keys in config that are not in the existing file must be appended."""
@@ -289,16 +295,16 @@ class TestInstallServerJar:
 
         fake_jar = tmp_path / "paper-1.21.4-200.jar"
         with (
-            patch("mc_helper.cli.resolve_version", return_value="1.21.4") as mock_resolve,
+            patch("mc_helper.cli.resolve_minecraft_version", return_value="1.21.4") as mock_resolve,
             patch("mc_helper.server.paper.PaperInstaller") as MockPaper,
         ):
             MockPaper.return_value.install.return_value = fake_jar
             result = _install_server_jar(config, tmp_path, dry_run=False)
 
         mock_resolve.assert_called_once_with(ANY, "LATEST")
-        # PaperInstaller must be constructed with the resolved version, not "LATEST"
         MockPaper.assert_called_once()
-        assert MockPaper.call_args.args[0] == "1.21.4"
+        # First arg is now ServerConfig; check the resolved version is on it
+        assert MockPaper.call_args.args[0].minecraft_version == "1.21.4"
         assert result == fake_jar
 
 
@@ -326,7 +332,6 @@ class TestCmdStatus:
         data["server"]["output_dir"] = str(tmp_path)
         cfg_file = _write_config(tmp_path, data)
 
-        # Write a manifest
         manifest_data = {
             "timestamp": "2026-01-01T00:00:00+00:00",
             "mc_version": "1.21.1",
@@ -376,7 +381,6 @@ class TestCmdSetupDispatch:
         _cmd_setup(self._make_args(cfg_file, dry_run=True))
         out = capsys.readouterr().out
         assert "[dry-run]" in out
-        # No real files created
         assert not (tmp_path / "eula.txt").exists()
 
     def test_output_dir_override(self, tmp_path):

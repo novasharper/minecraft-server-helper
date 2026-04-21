@@ -5,7 +5,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 from mc_helper import launch as launcher
-from mc_helper.config import load_config
+from mc_helper import server as server_pkg
+from mc_helper.config import JvmConfig, ServerConfig, load_config
 from mc_helper.http_client import build_session, download_file
 from mc_helper.manifest import Manifest
 from mc_helper.modpack import curseforge as modpack_cf
@@ -15,18 +16,13 @@ from mc_helper.modpack import gtnh as modpack_gtnh
 from mc_helper.modpack import modrinth as modpack_mr
 from mc_helper.mods import curseforge as cf_mods
 from mc_helper.mods import modrinth as mr_mods
-from mc_helper.server import fabric, forge, neoforge, paper, purpur, vanilla
-from mc_helper.server.vanilla import resolve_version
+from mc_helper.server import resolve_minecraft_version
+from mc_helper.server_properties import merge_server_properties
 
 log = logging.getLogger(__name__)
 
-_DEFAULT_MEMORY = "1G"
-
 
 def main() -> None:
-    # Shared parent so every subparser accepts --config after the subcommand name.
-    # SUPPRESS default means the subparser won't overwrite a value already set by
-    # the main parser when --config appears before the subcommand.
     _config_parent = argparse.ArgumentParser(add_help=False)
     _config_parent.add_argument(
         "--config",
@@ -39,7 +35,6 @@ def main() -> None:
         prog="mc-helper",
         description="Download and configure a Minecraft server from a YAML config file.",
     )
-    # Also on the main parser (default=None) so --config before the subcommand works.
     parser.add_argument(
         "--config",
         metavar="FILE",
@@ -49,7 +44,6 @@ def main() -> None:
 
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    # setup
     setup_parser = subparsers.add_parser(
         "setup", parents=[_config_parent], help="Download and install the server."
     )
@@ -58,22 +52,15 @@ def main() -> None:
         "--dry-run", action="store_true", help="Log actions without downloading."
     )
 
-    # validate
     subparsers.add_parser(
         "validate", parents=[_config_parent], help="Validate the configuration file."
     )
 
-    # status
     subparsers.add_parser(
         "status", parents=[_config_parent], help="Show installed server state from the manifest."
     )
 
-    parser.add_argument(
-        "-v",
-        "--verbose",
-        action="store_true",
-        help="Enable debug-level logging.",
-    )
+    parser.add_argument("-v", "--verbose", action="store_true", help="Enable debug-level logging.")
 
     args = parser.parse_args()
 
@@ -123,30 +110,20 @@ def _cmd_setup(args: argparse.Namespace) -> None:
         _setup_mods(config, output_dir, dry_run)
         return
     else:
-        # Vanilla / loader-only: install server JAR, then write config files
         start_artifact = _install_server_jar(config, output_dir, dry_run)
         _write_server_files(config, output_dir, start_artifact, dry_run)
         if not dry_run:
             log.info("Server installed to %s", output_dir)
         return
 
-    # Extra mods layered on top of serverpack or modpack
     if config.mods:
         _install_extra_mods(config, output_dir, dry_run)
 
 
-def _resolve_mc_version(session, version: str) -> str:
-    """Resolve 'LATEST' / 'SNAPSHOT' to a concrete Minecraft release version."""
-    if version and (version.upper() not in ("LATEST", "SNAPSHOT")):
-        return version
-    return resolve_version(session, version)
-
-
 def _install_server_jar(config, output_dir: Path, dry_run: bool) -> Path | None:
-    """Install the appropriate server JAR.
+    """Install the appropriate server JAR and return the start artifact path.
 
-    Returns the path to the installed JAR, or None for Forge/NeoForge (which
-    create their own run script via --installServer).
+    Returns None for Forge/NeoForge (they create their own run.sh).
     """
     server = config.server
 
@@ -164,41 +141,12 @@ def _install_server_jar(config, output_dir: Path, dry_run: bool) -> Path | None:
 
     output_dir.mkdir(parents=True, exist_ok=True)
     session = build_session()
-    mc_version = _resolve_mc_version(session, server.minecraft_version)
+    mc_version = resolve_minecraft_version(session, server.minecraft_version)
     log.info("Installing %s %s server...", server.type, mc_version)
 
-    if server.type == "vanilla":
-        start_artifact = vanilla.VanillaInstaller(mc_version, session=session).install(output_dir)
-
-    elif server.type == "fabric":
-        start_artifact = fabric.FabricInstaller(
-            mc_version,
-            loader_version=server.loader_version,
-            session=session,
-        ).install(output_dir)
-
-    elif server.type == "forge":
-        start_artifact = forge.ForgeInstaller(
-            mc_version,
-            forge_version=server.loader_version,
-            session=session,
-        ).install(output_dir)
-
-    elif server.type == "neoforge":
-        start_artifact = neoforge.NeoForgeInstaller(
-            mc_version,
-            neoforge_version=server.loader_version,
-            session=session,
-        ).install(output_dir)
-
-    elif server.type == "paper":
-        start_artifact = paper.PaperInstaller(mc_version, session=session).install(output_dir)
-
-    elif server.type == "purpur":
-        start_artifact = purpur.PurpurInstaller(mc_version, session=session).install(output_dir)
-
-    else:
-        raise ValueError(f"Unknown or unsupported server type: {server.type!r}")
+    server_with_resolved = server.model_copy(update={"minecraft_version": mc_version})
+    installer = server_pkg.installer_for(server_with_resolved, session=session)
+    start_artifact = installer.install(output_dir)
 
     manifest = Manifest(output_dir)
     manifest.load()
@@ -220,7 +168,6 @@ def _write_server_files(
     log.info("Writing server files to %s...", output_dir)
     server = config.server
 
-    # eula.txt
     eula_value = str(server.eula).lower()
     eula_path = output_dir / "eula.txt"
     if dry_run:
@@ -229,7 +176,6 @@ def _write_server_files(
         output_dir.mkdir(parents=True, exist_ok=True)
         eula_path.write_text(f"eula={eula_value}\n")
 
-    # server.properties — merge: preserve existing keys, overlay config keys
     if server.properties:
         props_path = output_dir / "server.properties"
         if dry_run:
@@ -237,32 +183,8 @@ def _write_server_files(
             for k, v in server.properties.items():
                 print(f"  {k}={v}")
         else:
-            if props_path.exists():
-                # Merge: update matching keys in-place, preserving comments and
-                # blank lines; append any config keys not already in the file.
-                lines: list[str] = []
-                seen_keys: set[str] = set()
-                for raw in props_path.read_text().splitlines():
-                    if "=" in raw and not raw.lstrip().startswith("#"):
-                        k, _, _ = raw.partition("=")
-                        k = k.strip()
-                        if k in server.properties:
-                            lines.append(f"{k}={server.properties[k]}")
-                            seen_keys.add(k)
-                        else:
-                            lines.append(raw)
-                    else:
-                        lines.append(raw)
-                for k, v in server.properties.items():
-                    if k not in seen_keys:
-                        lines.append(f"{k}={v}")
-                props_path.write_text("\n".join(lines) + "\n")
-            else:
-                props_path.write_text(
-                    "\n".join(f"{k}={v}" for k, v in server.properties.items()) + "\n"
-                )
+            merge_server_properties(props_path, server.properties)
 
-    # launch.sh (and any sibling launch-config files)
     if dry_run:
         start_artifact = output_dir / "dry-run.jar"
     elif start_artifact is None:
@@ -289,15 +211,8 @@ def _setup_modpack(config, output_dir: Path, dry_run: bool) -> None:
 
     if mp.platform in ("github", "url"):
         start_artifact = modpack_custom.ServerPackInstaller(
-            url=src.url if mp.platform == "url" else None,
-            github=src.repo if mp.platform == "github" else None,
-            tag=src.tag if mp.platform == "github" else "LATEST",
-            asset=src.asset if mp.platform == "github" else None,
-            token=src.token,
-            strip_components=src.strip_components,
-            exclude_mods=mp.exclude_mods or None,
-            force_update=src.force_update,
-            start_artifact=src.start_artifact,
+            source=src,
+            modpack=mp,
             session=session,
         ).install(output_dir)
         _write_server_files(config, output_dir, start_artifact, dry_run)
@@ -306,98 +221,62 @@ def _setup_modpack(config, output_dir: Path, dry_run: bool) -> None:
 
     if mp.platform == "gtnh":
         start_artifact = modpack_gtnh.GTNHPackInstaller(
-            version=src.version,
-            java_bin=config.server.java_bin,
+            source=src,
+            server=config.server,
             session=session,
         ).install(output_dir)
         _write_server_files(config, output_dir, start_artifact, dry_run)
         log.info("GTNH pack installed to %s", output_dir)
         return
 
-    loader = (
-        config.server.type
-        if config.server.type not in (None, "vanilla", "paper", "purpur")
-        else None
-    )
-
-    if config.server.minecraft_version:
-        mc_version = _resolve_mc_version(session, config.server.minecraft_version)
-    else:
-        mc_version = None
-
     if mp.platform == "modrinth":
         modpack_mr.ModrinthPackInstaller(
-            project=src.project,
-            minecraft_version=mc_version,
-            loader=loader,
-            version_type=src.version_type,
-            requested_version=src.version,
-            exclude_mods=mp.exclude_mods or None,
-            overrides_exclusions=mp.overrides_exclusions or None,
+            source=src,
+            server=config.server,
+            modpack=mp,
             session=session,
         ).install(output_dir)
     elif mp.platform == "curseforge":
         modpack_cf.CurseForgePackInstaller(
-            api_key=src.api_key,
-            slug=src.slug,
-            file_id=src.file_id,
-            filename_matcher=src.filename_matcher,
-            exclude_mods=mp.exclude_mods or None,
-            force_include_mods=mp.force_include_mods or None,
-            overrides_exclusions=mp.overrides_exclusions or None,
+            source=src,
+            modpack=mp,
+            session=session,
         ).install(output_dir)
     elif mp.platform == "ftb":
         ftb_installer = modpack_ftb.FTBPackInstaller(
-            pack_id=src.pack_id,
-            version_id=src.version_id,
-            api_key=src.api_key or "public",
-            version_type=src.version_type,
-            exclude_mods=mp.exclude_mods or None,
+            source=src,
+            modpack=mp,
             session=session,
         )
         ftb_installer.install(output_dir)
-        # Use the pack's memory recommendation as default when user left it at the minimum
+        # Use pack's memory recommendation when user left memory at the default
         if (
             ftb_installer.recommended_memory_mb is not None
-            and config.server.memory == _DEFAULT_MEMORY
+            and config.server.jvm.memory == JvmConfig().memory
         ):
             recommended = f"{ftb_installer.recommended_memory_mb}M"
-            log.info("FTB pack recommends %s RAM; using as server.memory default", recommended)
-            config.server.memory = recommended
+            log.info("FTB pack recommends %s RAM; using as server.jvm.memory default", recommended)
+            config.server.jvm.memory = recommended
 
-    # Install server JAR using loader info the modpack installer saved to manifest
+    # Install server JAR using loader info saved to manifest by the pack installer
     manifest = Manifest(output_dir)
     manifest.load()
-    start_artifact: Path | None = None
     loader_type = manifest.loader_type
     mc_version = manifest.mc_version
     loader_version = manifest.loader_version
 
-    log.info("Installing %s %s server JAR...", loader_type or "vanilla", mc_version)
-    if loader_type == "fabric":
-        start_artifact = fabric.FabricInstaller(
-            mc_version, loader_version=loader_version, session=session
-        ).install(output_dir)
-    elif loader_type == "forge":
-        start_artifact = forge.ForgeInstaller(
-            mc_version, forge_version=loader_version, session=session
-        ).install(output_dir)
-    elif loader_type == "neoforge":
-        start_artifact = neoforge.NeoForgeInstaller(
-            mc_version, neoforge_version=loader_version, session=session
-        ).install(output_dir)
-    elif loader_type == "gtnh":
+    if loader_type == "gtnh":
         raise RuntimeError("GTNH packs install their own server JAR; use 'platform: gtnh' directly")
-    elif loader_type == "quilt":
+    if loader_type == "quilt":
         raise NotImplementedError("Quilt server installation is not supported")
-    elif loader_type in (None, "vanilla"):
-        start_artifact = vanilla.VanillaInstaller(mc_version, session=session).install(output_dir)
-    elif loader_type == "paper":
-        start_artifact = paper.PaperInstaller(mc_version, session=session).install(output_dir)
-    elif loader_type == "purpur":
-        start_artifact = purpur.PurpurInstaller(mc_version, session=session).install(output_dir)
-    else:
-        raise ValueError(f"Unknown loader type from modpack manifest: {loader_type!r}")
+
+    log.info("Installing %s %s server JAR...", loader_type or "vanilla", mc_version)
+    pack_server_cfg = ServerConfig(
+        type=loader_type or "vanilla",
+        minecraft_version=mc_version,
+        loader_version=loader_version or "LATEST",
+    )
+    start_artifact = server_pkg.installer_for(pack_server_cfg, session=session).install(output_dir)
 
     _write_server_files(config, output_dir, start_artifact, dry_run)
     log.info("Modpack installed to %s", output_dir)
@@ -487,7 +366,7 @@ def _setup_mods(config, output_dir: Path, dry_run: bool) -> None:
         else None
     )
     session = build_session()
-    mc_ver = _resolve_mc_version(session, config.server.minecraft_version)
+    mc_ver = resolve_minecraft_version(session, config.server.minecraft_version)
 
     total = (
         len(mods_cfg.modrinth or [])
@@ -498,7 +377,6 @@ def _setup_mods(config, output_dir: Path, dry_run: bool) -> None:
     installed = _download_mods(mods_cfg, mc_ver, loader, output_dir, session)
     log.info("%d mod(s) installed to %s/mods/", len(installed), output_dir)
 
-    # Install server JAR and write config files
     start_artifact = _install_server_jar(config, output_dir, dry_run)
     _write_server_files(config, output_dir, start_artifact, dry_run)
 
@@ -533,7 +411,7 @@ def _install_extra_mods(config, output_dir: Path, dry_run: bool) -> None:
     )
 
     session = build_session()
-    mc_ver = _resolve_mc_version(session, manifest.mc_version)
+    mc_ver = resolve_minecraft_version(session, manifest.mc_version)
 
     total = (
         len(mods_cfg.modrinth or [])
@@ -543,7 +421,6 @@ def _install_extra_mods(config, output_dir: Path, dry_run: bool) -> None:
     log.info("Downloading %d extra mod(s) to %s/mods/...", total, output_dir)
     installed = _download_mods(mods_cfg, mc_ver, loader, output_dir, session)
 
-    # Append extra mod paths to manifest; base installer already saved its files
     manifest.files = sorted(set(manifest.files) | set(installed))
     manifest.save()
 
@@ -561,7 +438,8 @@ def _cmd_status(args: argparse.Namespace) -> None:
     manifest = Manifest(output_dir)
     manifest.load()
 
-    if not manifest._data:
+    data = manifest.snapshot()
+    if not data:
         log.info("No manifest found in %s — server has not been set up yet.", output_dir)
         return
 

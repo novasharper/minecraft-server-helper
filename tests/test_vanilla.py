@@ -6,8 +6,15 @@ import pytest
 import responses as rsps_lib
 from responses import RequestsMock
 
+from mc_helper.config import ServerConfig
 from mc_helper.http_client import build_session
 from mc_helper.server.vanilla import VanillaInstaller, resolve_version
+
+
+def _make_installer(version: str = "1.21.1", session=None, show_progress: bool = False):
+    config = ServerConfig(type="vanilla", minecraft_version=version)
+    return VanillaInstaller(config, session=session, show_progress=show_progress)
+
 
 # ── fixtures / helpers ────────────────────────────────────────────────────────
 
@@ -123,7 +130,7 @@ def test_resolve_version_unknown_raises():
 def test_install_downloads_jar(tmp_path):
     _register_standard(rsps_lib, "1.21.1")
     session = build_session()
-    jar = VanillaInstaller("1.21.1", session=session, show_progress=False).install(tmp_path)
+    jar = _make_installer("1.21.1", session=session).install(tmp_path)
 
     assert jar == tmp_path / "minecraft_server.1.21.1.jar"
     assert jar.exists()
@@ -140,7 +147,7 @@ def test_install_resolves_latest(tmp_path):
         json=_VERSION_MANIFEST,
     )
     session = build_session()
-    jar = VanillaInstaller("LATEST", session=session, show_progress=False).install(tmp_path)
+    jar = _make_installer("LATEST", session=session).install(tmp_path)
     assert jar.name == "minecraft_server.1.21.1.jar"
 
 
@@ -165,7 +172,7 @@ def test_install_verifies_sha1(tmp_path):
 
     session = build_session()
     with pytest.raises(ValueError, match="SHA-1 mismatch"):
-        VanillaInstaller("1.21.1", session=session, show_progress=False).install(tmp_path)
+        _make_installer("1.21.1", session=session).install(tmp_path)
 
 
 @rsps_lib.activate
@@ -183,4 +190,4 @@ def test_install_no_server_download_raises(tmp_path):
     )
     session = build_session()
     with pytest.raises(ValueError, match="No server download"):
-        VanillaInstaller("1.21.1", session=session, show_progress=False).install(tmp_path)
+        _make_installer("1.21.1", session=session).install(tmp_path)

@@ -11,12 +11,14 @@ Workflow:
 """
 
 import logging
-import subprocess
 from pathlib import Path
 
 import requests
 
-from mc_helper.http_client import build_session, download_file
+from mc_helper.config import ServerConfig
+from mc_helper.http_client import download_file, get_json
+
+from .base import ServerInstaller, run_java_installer
 
 log = logging.getLogger(__name__)
 
@@ -25,11 +27,7 @@ _MAVEN_BASE = "https://maven.minecraftforge.net"
 
 
 def _installer_urls(minecraft_version: str, forge_version: str) -> list[str]:
-    """Return candidate installer URLs in priority order.
-
-    Forge has used several version qualifier schemes across its history;
-    try each in order until one succeeds.
-    """
+    """Return candidate installer URLs in priority order."""
     mc, fv = minecraft_version, forge_version
     base = f"{_MAVEN_BASE}/net/minecraftforge/forge"
     return [
@@ -38,55 +36,46 @@ def _installer_urls(minecraft_version: str, forge_version: str) -> list[str]:
     ]
 
 
-class ForgeInstaller:
+class ForgeInstaller(ServerInstaller):
     """Downloads and runs the Forge server installer."""
 
     def __init__(
         self,
-        minecraft_version: str,
-        forge_version: str = "RECOMMENDED",
+        config: ServerConfig,
         session: requests.Session | None = None,
         show_progress: bool = True,
     ) -> None:
-        self.minecraft_version = minecraft_version
-        self.forge_version = forge_version
-        self.session = session or build_session()
-        self.show_progress = show_progress
-
-    def _get_promotions(self) -> dict:
-        resp = self.session.get(_PROMOTIONS_URL, timeout=30)
-        resp.raise_for_status()
-        return resp.json()
+        super().__init__(config, session=session, show_progress=show_progress)
 
     def _resolve_forge_version(self) -> str:
         """Resolve LATEST / RECOMMENDED to a concrete Forge version string."""
-        normalized = self.forge_version.lower()
+        forge_version = self.config.loader_version
+        normalized = forge_version.lower()
         if normalized not in ("latest", "recommended"):
-            return self.forge_version
+            return forge_version
 
-        promos: dict[str, str] = self._get_promotions()["promos"]
+        promos: dict[str, str] = get_json(self.session, _PROMOTIONS_URL)["promos"]  # type: ignore[index]
+        mc = self.config.minecraft_version
 
-        # Keys are like "1.21.1-recommended": "51.0.33"
         options: dict[str, str] = {}
         for key, forge_ver in promos.items():
             parts = key.split("-", 1)
-            if len(parts) == 2 and parts[0] == self.minecraft_version:
+            if len(parts) == 2 and parts[0] == mc:
                 options[parts[1].lower()] = forge_ver
 
         if not options:
-            raise ValueError(f"No Forge versions available for Minecraft {self.minecraft_version}")
+            raise ValueError(f"No Forge versions available for Minecraft {mc}")
 
         if normalized in options:
             return options[normalized]
-        # Fall back to whichever promo is available
         return next(iter(options.values()))
 
     def _download_installer(self, output_dir: Path, resolved: str) -> Path:
         """Try each candidate URL in order; return the path of the downloaded JAR."""
-        urls = _installer_urls(self.minecraft_version, resolved)
+        mc = self.config.minecraft_version
+        urls = _installer_urls(mc, resolved)
         last_exc: Exception | None = None
         for url in urls:
-            # Use a HEAD request to check existence before committing to download.
             try:
                 head = self.session.head(url, timeout=15)
                 if head.status_code == 404:
@@ -96,14 +85,14 @@ class ForgeInstaller:
             except Exception as exc:
                 last_exc = exc
                 continue
-            installer_jar = output_dir / f"forge-{self.minecraft_version}-{resolved}-installer.jar"
+            installer_jar = output_dir / f"forge-{mc}-{resolved}-installer.jar"
             log.debug("Downloading Forge installer: %s", url)
             download_file(
                 url, installer_jar, session=self.session, show_progress=self.show_progress
             )
             return installer_jar
         raise RuntimeError(
-            f"No Forge installer found for {self.minecraft_version}-{resolved}. " f"Tried: {urls}"
+            f"No Forge installer found for {mc}-{resolved}. Tried: {urls}"
         ) from last_exc
 
     def install(self, output_dir: Path) -> Path:
@@ -114,18 +103,5 @@ class ForgeInstaller:
         resolved = self._resolve_forge_version()
         log.info("Resolved Forge version: %s", resolved)
         installer_jar = self._download_installer(output_dir, resolved)
-
         log.info("Running Forge installer (this may take a while)...")
-        try:
-            subprocess.run(
-                ["java", "-jar", str(installer_jar), "--installServer"],
-                cwd=output_dir,
-                check=True,
-            )
-        finally:
-            installer_jar.unlink(missing_ok=True)
-            # The Forge installer leaves a log file alongside the installer JAR
-            log_file = installer_jar.with_suffix(installer_jar.suffix + ".log")
-            log_file.unlink(missing_ok=True)
-
-        return output_dir / "run.sh"
+        return run_java_installer(installer_jar, output_dir)
