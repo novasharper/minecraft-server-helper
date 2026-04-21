@@ -152,17 +152,13 @@ def test_curseforge_modpack_valid():
 
 
 def test_curseforge_modpack_missing_api_key():
-    data = _minimal_data(
-        modpack={"platform": "curseforge", "source": {"slug": "atm9"}}
-    )
+    data = _minimal_data(modpack={"platform": "curseforge", "source": {"slug": "atm9"}})
     with pytest.raises(ValidationError, match="api_key"):
         RootConfig.model_validate(data)
 
 
 def test_curseforge_modpack_missing_slug_and_file_id():
-    data = _minimal_data(
-        modpack={"platform": "curseforge", "source": {"api_key": "abc"}}
-    )
+    data = _minimal_data(modpack={"platform": "curseforge", "source": {"api_key": "abc"}})
     with pytest.raises(ValidationError, match="slug"):
         RootConfig.model_validate(data)
 
@@ -185,9 +181,7 @@ def test_github_modpack_valid():
 
 
 def test_github_modpack_missing_repo():
-    data = _minimal_data(
-        modpack={"platform": "github", "source": {"tag": "v1.0"}}
-    )
+    data = _minimal_data(modpack={"platform": "github", "source": {"tag": "v1.0"}})
     with pytest.raises(ValidationError, match="repo"):
         RootConfig.model_validate(data)
 
@@ -204,9 +198,7 @@ def test_url_modpack_valid():
 
 
 def test_url_modpack_missing_url():
-    data = _minimal_data(
-        modpack={"platform": "url", "source": {}}
-    )
+    data = _minimal_data(modpack={"platform": "url", "source": {}})
     with pytest.raises(ValidationError, match="url"):
         RootConfig.model_validate(data)
 

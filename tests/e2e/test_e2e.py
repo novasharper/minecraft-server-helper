@@ -178,9 +178,12 @@ def _check_server_starts(
         "run",
         # No --rm: keep the container after exit so its logs remain accessible
         # even if the server crashes immediately before the first `logs` poll.
-        "--name", container_name,
-        "-v", f"{output_dir}:/server",
-        "-w", "/server",
+        "--name",
+        container_name,
+        "-v",
+        f"{output_dir}:/server",
+        "-w",
+        "/server",
         e2e_image,
         "/server/launch.sh",
     ]
@@ -238,9 +241,9 @@ def _assert_server_artifact(output_dir: Path, pattern: str) -> None:
         matches = list(output_dir.glob(pattern))
         assert matches, f"expected server artifact {pattern!r} not found in {output_dir}"
     else:
-        assert (output_dir / pattern).exists(), (
-            f"expected server artifact {pattern!r} not found in {output_dir}"
-        )
+        assert (
+            output_dir / pattern
+        ).exists(), f"expected server artifact {pattern!r} not found in {output_dir}"
 
 
 # ── Server pack tests ─────────────────────────────────────────────────────────
