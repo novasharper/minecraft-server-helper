@@ -4,9 +4,9 @@ A standalone Python CLI (`mc-helper`) that prepares a Minecraft server directory
 
 ## Features
 
-- **Seven server types**: Vanilla, Fabric, Forge, NeoForge, Paper, Purpur
-- **Modpacks**: CurseForge, Modrinth, and FTB modpack installation with override extraction
-- **Individual mods**: Modrinth and CurseForge mod resolution by slug, ID, or version; parallel downloads
+- **Six server types**: Vanilla, Fabric, Forge, NeoForge, Paper, Purpur
+- **Modpacks**: CurseForge, Modrinth, FTB, and GTNH modpack installation with override extraction
+- **Individual mods**: Modrinth, CurseForge, and direct URL resolution; parallel downloads
 - **Server packs**: Pre-assembled ZIP/tar.gz/tar.bz2 from direct URL or GitHub release asset
 - **Idempotent**: Manifest-tracked state skips unchanged files and removes stale ones on re-run
 - **Config-driven**: One YAML file covers server type, properties, mods, and output location
@@ -48,7 +48,7 @@ After a successful `setup` run, `output_dir` contains the server JAR (or extract
 
 ## Configuration
 
-A config file has one required `server` section and one or more optional install sections. `modpack` and `serverpack` are mutually exclusive base install modes; `mods` may be combined with either to add extra mods on top. Omitting all three installs only the server JAR.
+A config file has one required `server` section and one or more optional install sections. `modpack` and `mods` can be used alone or combined (mods are layered on top). Omitting both installs only the server JAR.
 
 ### Minimal example — Modrinth modpack
 
@@ -66,8 +66,9 @@ server:
 
 modpack:
   platform: modrinth
-  project: "better-mc-fabric"
-  version: LATEST
+  source:
+    project: "better-mc-fabric"
+    version: LATEST
 ```
 
 ### Minimal example — FTB modpack
@@ -81,8 +82,9 @@ server:
 
 modpack:
   platform: ftb
-  pack_id: 7
-  version_type: release   # release | beta | alpha; omit version_id to use latest
+  source:
+    pack_id: 130              # numeric ID from the feed-the-beast.com URL
+    version_type: release   # release | beta | alpha; omit version_id to use latest
 ```
 
 ### Minimal example — individual mods
@@ -102,6 +104,8 @@ mods:
     api_key: ${CF_API_KEY}
     files:
       - jei
+  urls:
+    - https://example.com/mymod-1.0.jar
 ```
 
 ### Minimal example — server pack
@@ -113,15 +117,17 @@ server:
   output_dir: ./server
   eula: true
 
-serverpack:
-  github: "ATM-Team/ATM-10"
-  tag: LATEST
-  asset: "*server*"
+modpack:
+  platform: github
+  source:
+    repo: "ATM-Team/ATM-10"
+    tag: LATEST
+    asset: "*server*"
 ```
 
 ### Adding extra mods to a modpack or server pack
 
-`mods` can be combined with `modpack` or `serverpack` to layer additional mods on top of the base install:
+`mods` can be combined with `modpack` (including GitHub/URL platforms) to layer additional mods on top of the base install:
 
 ```yaml
 server:
@@ -132,12 +138,15 @@ server:
 
 modpack:
   platform: modrinth
-  project: "better-mc-fabric"
+  source:
+    project: "better-mc-fabric"
 
 mods:
   modrinth:
     - iris
     - bobby
+  urls:
+    - https://example.com/custom-mod-1.0.jar
 ```
 
 The base pack installs first, then the extra mods are downloaded into `<output_dir>/mods/`. On re-run the extra mods are always re-installed after the pack (the pack's cleanup removes them; they are re-downloaded immediately after).

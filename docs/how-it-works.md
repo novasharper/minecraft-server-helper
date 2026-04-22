@@ -31,9 +31,9 @@ On each run the installer:
 
 This makes re-runs safe and fast.
 
-### Server pack idempotency
+### GitHub/URL pack idempotency
 
-For `serverpack`, re-extraction is skipped when the SHA-1 of the downloaded archive matches `pack_sha1` in the manifest and `force_update` is `false`. The SHA-1 is written to the manifest after the first successful extraction.
+For GitHub and URL modpack platforms, re-extraction is skipped when the SHA-1 of the downloaded archive matches `pack_sha1` in the manifest and `force_update` is `false`. The SHA-1 is written to the manifest after the first successful extraction.
 
 ---
 
@@ -53,13 +53,13 @@ CurseForge requests use a separate session with the `X-Api-Key` header injected.
 
 ## Parallel mod downloads
 
-In `mods` mode (standalone or as an overlay on top of `modpack`/`serverpack`), all Modrinth and CurseForge mod downloads are submitted to a `ThreadPoolExecutor` with a maximum of 10 concurrent workers. URL-based mods are downloaded sequentially after the pool finishes. Errors from individual mods are collected and reported at the end; a non-zero exit code is returned if any download failed.
+In `mods` mode (standalone or as an overlay on top of a modpack), all Modrinth and CurseForge mod downloads are submitted to a `ThreadPoolExecutor` with a maximum of 10 concurrent workers. URL-based mods are downloaded sequentially after the pool finishes. Errors from individual mods are collected and reported at the end; a non-zero exit code is returned if any download failed.
 
-When `mods` is combined with `modpack` or `serverpack`, the extra mod paths are appended to the manifest after the base installer saves it. This ensures that on the next run, the base pack's stale-file cleanup correctly removes them before they are re-installed.
+When `mods` is combined with a modpack, the extra mod paths are appended to the manifest after the base installer saves it. This ensures that on the next run, the base pack's stale-file cleanup correctly removes them before they are re-installed.
 
 ---
 
-## Archive extraction (`serverpack`)
+## Archive extraction (GitHub/URL packs)
 
 Archive format is detected from the filename:
 
@@ -70,15 +70,15 @@ Archive format is detected from the filename:
 
 ### `strip_components`
 
-When `strip_components: N` is set, the first N path segments of every archive entry are removed during extraction. This mirrors the behaviour of `tar --strip-components=N` and is useful when the archive wraps everything in a single top-level directory.
+When `strip_components: N` is set (for GitHub/URL platforms), the first N path segments of every archive entry are removed during extraction. This mirrors the behaviour of `tar --strip-components=N` and is useful when the archive wraps everything in a single top-level directory.
 
 ### Content-root detection
 
 After extraction, the tool searches for the shallowest directory that contains a subdirectory named `mods`, `plugins`, or `config`. If the content is nested one or more levels deep, the content root is promoted to `output_dir` directly.
 
-### `disable_mods`
+### `exclude_mods` (as `disable_mods`)
 
-After extraction, any file inside `mods/` whose name matches a glob pattern in `disable_mods` is renamed to `<name>.disabled`. This is useful for disabling client-only mods that are bundled in server packs.
+For GitHub/URL packs, any file inside `mods/` whose name matches a glob pattern in `exclude_mods` is renamed to `<name>.disabled` after extraction. This is useful for disabling client-only mods that are bundled in server packs.
 
 ---
 
@@ -97,6 +97,38 @@ RootConfig (validated)
 ```
 
 Interpolation runs before validation, so Pydantic sees fully resolved values. If any `${VAR}` reference names an unset environment variable, the tool exits immediately before making any network requests.
+
+## Launch plans and JVM flags
+
+`mc-helper` detects the appropriate delivery channel for JVM and server arguments based on the installed artifact.
+
+### Launch kinds
+
+| Kind | Trigger | Writes |
+|---|---|---|
+| `jar` | `.jar` artifact (Vanilla / Fabric / Paper / Purpur) | `launch.sh` with full `java … -jar …` line. |
+| `run_sh` | `run.sh` (Forge 1.17+ / NeoForge) | Merges `-Xms/-Xmx` and JVM args into `user_jvm_args.txt` (idempotent); `launch.sh` execs `./run.sh`. |
+| `cf_script` | `.sh` + CurseForge settings files present | Patches `settings-local.sh`, `settings.cfg`, or `variables.txt` in place. |
+| `bare_script` | Generic `.sh` fallback | Thin `launch.sh`; warns if JVM args are configured (nowhere to put them). |
+
+### Auto JVM flags
+
+The tool automatically applies certain flags based on the Minecraft version and server state:
+
+- **Log4j CVE shim:** Applied automatically for MC 1.7 to <1.18.1 (except for `cf_script` which handles its own).
+- **GTNH args:** `-Dfml.readTimeout=180` and version-specific memory flags are applied when `loader_type` is `gtnh`.
+
+### Opt-in flag bundles
+
+Users can enable pre-configured flag bundles in the `server.jvm` section:
+
+- `use_aikar_flags`: Optimized G1GC flags for Minecraft.
+- `use_meowice_flags`: Aggressive optimization flags (requires Java 17+, falls back to Aikar if older).
+- `use_meowice_graalvm_flags`: Experimental optimization flags for GraalVM.
+- `use_flare_flags`: Enables profiling support for Flare.
+- `use_simd_flags`: Enables the Vector API (`jdk.incubator.vector`).
+
+Java version is auto-detected by running `java -version` to ensure compatibility with specific flag bundles.
 
 ---
 
@@ -126,18 +158,4 @@ When `server.properties` already exists (e.g. on a re-run or from the server pac
 
 ### `launch.sh`
 
-A minimal POSIX shell script that starts the server. For most types:
-
-```sh
-#!/bin/sh
-exec java -Xmx2G -Xms2G -jar minecraft_server.1.21.1.jar nogui "$@"
-```
-
-For Forge and NeoForge (which produce their own `run.sh`):
-
-```sh
-#!/bin/sh
-exec ./run.sh "$@"
-```
-
-The script is created with executable permissions (`chmod +x`). `"$@"` passes any extra arguments through, so you can add JVM flags at launch time without editing the script.
+A minimal POSIX shell script that starts the server. The script is created with executable permissions (`chmod +x`). `"$@"` passes any extra arguments through, so you can add JVM flags at launch time without editing the script. The exact content of the script depends on the [Launch kind](#launch-kinds) detected during setup.

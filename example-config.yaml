@@ -3,9 +3,9 @@
 # `modpack` and `mods` can be combined (mods are layered on top).
 
 server:
-  type: fabric                  # vanilla | forge | neoforge | fabric | quilt | paper | purpur
+  type: fabric                  # vanilla | forge | neoforge | fabric | paper | purpur
   minecraft_version: "1.21.1"   # specific version, LATEST, or SNAPSHOT
-  loader_version: LATEST        # fabric/forge/neoforge/quilt only; ignored for vanilla/paper/purpur
+  loader_version: LATEST        # fabric/forge/neoforge only; ignored for vanilla/paper/purpur
   output_dir: ./server
   eula: true
   memory: 2G
@@ -17,7 +17,7 @@ server:
 
 # ── Option A: Install a modpack ───────────────────────────────────────────────
 modpack:
-  platform: modrinth            # modrinth | curseforge | ftb | github | url
+  platform: modrinth            # modrinth | curseforge | ftb | github | url | gtnh
 
   # ── Modrinth source ──
   source:
@@ -34,10 +34,14 @@ modpack:
 
   # ── FTB source ──
   # source:
-  #   pack_id: 130              # numeric FTB pack ID (required)
+  #   pack_id: 130              # numeric FTB pack ID (found in the feed-the-beast.com URL)
   #   version_id: ~             # null = latest release (or matching version_type)
   #   api_key: ${FTB_API_KEY}   # only needed for private packs; defaults to "public"
   #   version_type: release
+
+  # ── GTNH source (GregTech New Horizons) ──
+  # source:
+  #   version: latest           # latest | latest-dev | exact e.g. "2.7.0"
 
   # ── GitHub source (pre-assembled server pack from a GitHub release) ──
   # source:

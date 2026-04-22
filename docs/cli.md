@@ -31,8 +31,7 @@ mc-helper setup --config config.yaml
 
 1. Validates the config.
 2. Dispatches to the appropriate installer:
-   - `serverpack` → extracts a pre-assembled server archive.
-   - `modpack` → downloads and installs the modpack (and its embedded server JAR).
+   - `modpack` → downloads and installs the modpack (Modrinth, CurseForge, FTB, GTNH) or extracts a pre-assembled server pack (GitHub, URL).
    - `mods` → installs individual mods in parallel, then installs the server JAR.
    - *(none)* → installs the server JAR only.
 3. Writes `eula.txt`, `server.properties`, and `launch.sh` into `output_dir`.
