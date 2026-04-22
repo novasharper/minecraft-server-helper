@@ -457,3 +457,7 @@ def _cmd_status(args: argparse.Namespace) -> None:
         log.info("  Tracked files     : %d", len(files))
         for f in files:
             log.info("    %s", f)
+
+
+if __name__ == "__main__":
+    main()

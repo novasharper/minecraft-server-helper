@@ -5,16 +5,17 @@ import json
 from pathlib import Path
 from typing import Literal
 
-_DATA_DIR = Path(__file__).parent.parent / "data"
-
+from importlib import resources
 
 def load_exclude_include(kind: Literal["cf", "mr"]) -> dict:
     """Load the bundled exclude/include filter file for CurseForge or Modrinth."""
     filename = "cf-exclude-include.json" if kind == "cf" else "modrinth-exclude-include.json"
-    path = _DATA_DIR / filename
-    if path.exists():
-        return json.loads(path.read_text())
-    return {"globalExcludes": [], "globalForceIncludes": [], "modpacks": {}}
+    try:
+        traversable = resources.files("mc_helper.data").joinpath(filename)
+        with traversable.open("r", encoding="utf-8") as f:
+            return json.load(f)
+    except (ImportError, FileNotFoundError):
+        return {"globalExcludes": [], "globalForceIncludes": [], "modpacks": {}}
 
 
 def matches_any(patterns: list[str], name: str) -> bool:

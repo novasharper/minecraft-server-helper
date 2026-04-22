@@ -20,6 +20,16 @@ Requires Python 3.11+ and [Poetry](https://python-poetry.org/).
 poetry install
 ```
 
+## Build Standalone Binary
+
+You can generate a single-file executable for your platform (Windows, macOS, or Linux) using PyInstaller. This allows you to run `mc-helper` without a Python environment.
+
+```bash
+poetry run python scripts/build.py
+```
+
+The binary will be created in `dist/mc-helper` (or `dist/mc-helper.exe` on Windows).
+
 ## Quick start
 
 ```bash

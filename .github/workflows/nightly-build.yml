@@ -1,0 +1,73 @@
+name: Nightly Build
+
+on:
+  schedule:
+    - cron: '0 0 * * *'  # Midnight every night
+  workflow_dispatch:      # Allow manual triggering
+
+# Hardening: Explicitly set minimum permissions
+permissions:
+  contents: read
+
+jobs:
+  check_changes:
+    runs-on: ubuntu-latest
+    outputs:
+      has_changes: ${{ steps.check.outputs.has_changes }}
+    steps:
+      # Hardening: Pinning to SHAs (v6.0.2)
+      - uses: actions/checkout@de0fac29a6115a449474c2e77c1d1d956744002d # v6.0.2
+        with:
+          fetch-depth: 0
+      - id: check
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            echo "has_changes=true" >> $GITHUB_OUTPUT
+          else
+            # Check if there were any commits in the last 24 hours
+            if [ $(git log --since="24 hours ago" | wc -l) -gt 0 ]; then
+              echo "has_changes=true" >> $GITHUB_OUTPUT
+            else
+              echo "has_changes=false" >> $GITHUB_OUTPUT
+            fi
+          fi
+
+  build:
+    needs: check_changes
+    if: needs.check_changes.outputs.has_changes == 'true'
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    
+    steps:
+      - uses: actions/checkout@de0fac29a6115a449474c2e77c1d1d956744002d # v6.0.2
+      
+      - name: Set up Python 3.12
+        uses: actions/setup-python@a309ff8f2d0be2fb38bd78e4b4dbde5606d7042f # v6.2.0
+        with:
+          python-version: '3.12'
+          
+      - name: Install Poetry
+        # Hardening: Pinning third-party action (v1.4.0)
+        uses: snok/install-poetry@93ada01d73d7d8a02b737fa7d3d87b2d1187927d # v1.4.0
+        with:
+          virtualenvs-create: true
+          virtualenvs-in-project: true
+          
+      - name: Install dependencies
+        run: poetry install
+        
+      - name: Build binary
+        run: poetry run python scripts/build.py
+        
+      - name: Upload artifact
+        uses: actions/upload-artifact@043fb46002d0be2fb38bd78e4b4dbde5606d7042f # v7.0.1
+        with:
+          name: mc-helper-${{ matrix.os }}
+          path: |
+            dist/mc-helper
+            dist/mc-helper.exe
+          if-no-files-found: ignore

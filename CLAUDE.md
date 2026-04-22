@@ -39,6 +39,9 @@ poetry run ruff format src/ tests/
 # Validate a config file
 poetry run mc-helper validate --config example-config.yaml
 
+# Build standalone binary
+poetry run python scripts/build.py
+
 # Dry-run setup (no downloads)
 poetry run mc-helper setup --config example-config.yaml --dry-run
 
