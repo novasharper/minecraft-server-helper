@@ -1,0 +1,17 @@
+# GT: New Horizons 2.8.4 — direct URL server pack
+server:
+  output_dir: ${E2E_OUTPUT_DIR}/with-added-mods
+  eula: true
+  jvm:
+    memory: 4G
+
+modpack:
+  platform: github
+  source:
+    repo: TerraFirmaGreg-Team/Modpack-Modern
+    tag: 0.11.28
+    asset: "*serverpack*"
+
+mods:
+  modrinth:
+    - simple-voice-chat

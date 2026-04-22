@@ -304,6 +304,15 @@ def test_modpack_all_of_create(container_runtime, e2e_image, output_base):
     _check_server_starts(container_runtime, output_dir, e2e_image, timeout=HEAVY_START_TIMEOUT)
 
 
+def test_modpack_with_added_mods(container_runtime, e2e_image, output_base):
+    result = _run(container_runtime, e2e_image, output_base, "modpack-with-added-mods.yaml")
+    assert result.returncode == 0, "mc-helper exited non-zero"
+    output_dir = output_base / "with-added-mods"
+    _assert_basic_files(output_dir)
+    _assert_mods_populated(output_dir)
+    _check_server_starts(container_runtime, output_dir, e2e_image, timeout=HEAVY_START_TIMEOUT)
+
+
 # ── Pure server type tests ────────────────────────────────────────────────────
 
 
