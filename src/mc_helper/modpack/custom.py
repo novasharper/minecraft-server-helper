@@ -32,6 +32,7 @@ from mc_helper.http_client import build_session, download_file
 from mc_helper.manifest import Manifest
 
 from ._archives import disable_mods, extract_archive, find_content_root, sha1_file
+from ._detect import detect_pack_versions
 
 log = logging.getLogger(__name__)
 
@@ -58,6 +59,25 @@ class ServerPackInstaller:
             self.session = session
             if token:
                 self.session.headers["Authorization"] = f"Bearer {token}"
+
+    def _populate_manifest_versions(self, manifest: Manifest, output_dir: Path) -> None:
+        """Detect MC/loader versions and write them to *manifest* (does not save)."""
+        detected_mc, detected_loader, detected_ver = detect_pack_versions(output_dir)
+        final_mc = self.source.mc_version or detected_mc
+        final_loader = self.source.loader_type or detected_loader
+        final_ver = self.source.loader_version or detected_ver
+        if final_mc is not None:
+            manifest.mc_version = final_mc
+        if final_loader is not None:
+            manifest.loader_type = final_loader
+        if final_ver is not None:
+            manifest.loader_version = final_ver
+        if final_mc is None and final_loader is None:
+            log.warning(
+                "Could not detect Minecraft / loader version from server pack; "
+                "launch behavior will skip version-specific flags. "
+                "Set source.mc_version / source.loader_type in config to override."
+            )
 
     def _detect_start_artifact(self, output_dir: Path) -> Path | None:
         override = getattr(self.source, "start_artifact", None)
@@ -116,6 +136,9 @@ class ServerPackInstaller:
             sha1 = sha1_file(tmp_archive)
             if not force_update and manifest.pack_sha1 == sha1:
                 log.info("Server pack SHA-1 unchanged — skipping extraction")
+                if manifest.mc_version is None and manifest.loader_type is None:
+                    self._populate_manifest_versions(manifest, output_dir)
+                    manifest.save()
                 return self._detect_start_artifact(output_dir)
 
             log.info("Extracting server pack...")
@@ -141,6 +164,7 @@ class ServerPackInstaller:
                         shutil.copy2(item, dest)
 
             manifest.pack_sha1 = sha1
+            self._populate_manifest_versions(manifest, output_dir)
             manifest.save()
 
         finally:

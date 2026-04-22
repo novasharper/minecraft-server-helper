@@ -113,6 +113,9 @@ class GithubSource(BaseModel):
     strip_components: int = 0
     force_update: bool = False
     start_artifact: Optional[str] = None
+    mc_version: Optional[str] = None
+    loader_type: Optional[str] = None
+    loader_version: Optional[str] = None
 
 
 class UrlSource(BaseModel):
@@ -121,6 +124,9 @@ class UrlSource(BaseModel):
     strip_components: int = 0
     force_update: bool = False
     start_artifact: Optional[str] = None
+    mc_version: Optional[str] = None
+    loader_type: Optional[str] = None
+    loader_version: Optional[str] = None
 
 
 Source = ModrinthSource | CurseForgeSource | FTBSource | GithubSource | UrlSource | GTNHSource

@@ -59,7 +59,7 @@ The entry point uses `argparse` (not Click). Subcommands: `setup`, `validate`, `
 
 `_download_mods()` is a shared helper used by both `_setup_mods()` and `_install_extra_mods()`. After install, `_write_server_files()` writes `eula.txt` + `server.properties`, then hands off to `launch.py` to produce the launch configuration (see below). Modpack installers handle server JAR installation themselves (embedded in pack metadata); `_install_server_jar()` is only called explicitly for the `mods` and bare-server cases.
 
-The `github` and `url` platforms share `modpack/custom.py` (`ServerPackInstaller`) for pre-assembled server-pack archives.
+The `github` and `url` platforms share `modpack/custom.py` (`ServerPackInstaller`) for pre-assembled server-pack archives. After extraction, `modpack/_detect.py::detect_pack_versions()` is called to populate `mc_version`, `loader_type`, and `loader_version` in the manifest. Detection order: `forge-auto-install.txt` sidecar (covers Forge + NeoForge via `loaderType` field) → filename heuristics (Fabric, Paper, Purpur, Vanilla, legacy Forge jar) → installer-jar inspection (`version.json` / `install_profile.json`). Config-level overrides (`source.mc_version`, `source.loader_type`, `source.loader_version`) take precedence over auto-detection.
 
 ### Config (`config.py`)
 
@@ -116,6 +116,14 @@ Java major version is probed via `java -version` when a bundle needs it. `use_me
 ### Testing conventions
 
 Unit tests block all real network I/O via an `autouse` fixture in `conftest.py` (patches `socket.create_connection` and `socket.getaddrinfo`). Use `@responses.activate` to mock HTTP calls — tests decorated with it are unaffected by the socket block.
+
+## Knowledge persistence during long tasks
+
+During multi-phase work (planning, large refactors), save durable learnings to memory incrementally as they're discovered — don't wait until task end. Context compaction can silently drop mid-session work.
+
+- Group memories by topic into separate files (`reference_*.md`, `project_*.md`, `feedback_*.md`) — not one large file.
+- Always update `MEMORY.md` (index) when adding a new memory file.
+- Trigger: any task expected to span more than ~5 tool calls, or any explicit planning phase.
 
 ## Reference Sources
 

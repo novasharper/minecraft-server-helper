@@ -11,6 +11,7 @@ import responses as rsps_lib
 from mc_helper.config import GithubSource, ModpackConfig, UrlSource
 from mc_helper.github_release import resolve_github_url
 from mc_helper.http_client import build_session
+from mc_helper.manifest import Manifest
 from mc_helper.modpack._archives import extract_tar, extract_zip, sha1_file
 from mc_helper.modpack.custom import ServerPackInstaller
 
@@ -254,6 +255,114 @@ def test_install_force_update_ignores_sha1(tmp_path):
     )
 
     assert (tmp_path / "mods" / "mod.jar").read_bytes() == b"jar"
+
+
+@rsps_lib.activate
+def test_install_detects_forge_auto_install(tmp_path):
+    auto_install = "minecraftVersion=1.20.1\nloaderType=forge\nloaderVersion=47.4.13\n"
+    zip_bytes = _make_zip({"forge-auto-install.txt": auto_install.encode(), "mods/jei.jar": b"jar"})
+    rsps_lib.add(rsps_lib.GET, "https://example.com/pack.zip", body=zip_bytes)
+
+    session = build_session()
+    _make_url_installer("https://example.com/pack.zip", session=session).install(tmp_path)
+
+    m = Manifest(tmp_path)
+    m.load()
+    assert m.mc_version == "1.20.1"
+    assert m.loader_type == "forge"
+    assert m.loader_version == "47.4.13"
+
+
+@rsps_lib.activate
+def test_install_detects_neoforge_latest_version_is_none(tmp_path):
+    auto_install = "minecraftVersion=1.21.1\nloaderType=NeoForge\nloaderVersion=latest\n"
+    zip_bytes = _make_zip({"forge-auto-install.txt": auto_install.encode()})
+    rsps_lib.add(rsps_lib.GET, "https://example.com/pack.zip", body=zip_bytes)
+
+    session = build_session()
+    _make_url_installer("https://example.com/pack.zip", session=session).install(tmp_path)
+
+    m = Manifest(tmp_path)
+    m.load()
+    assert m.mc_version == "1.21.1"
+    assert m.loader_type == "neoforge"
+    assert m.loader_version is None
+
+
+@rsps_lib.activate
+def test_install_detects_fabric_from_launcher_properties(tmp_path):
+    props = "serverJar=minecraft_server.1.20.4.jar\n"
+    zip_bytes = _make_zip({"fabric-server-launcher.properties": props.encode()})
+    rsps_lib.add(rsps_lib.GET, "https://example.com/pack.zip", body=zip_bytes)
+
+    session = build_session()
+    _make_url_installer("https://example.com/pack.zip", session=session).install(tmp_path)
+
+    m = Manifest(tmp_path)
+    m.load()
+    assert m.mc_version == "1.20.4"
+    assert m.loader_type == "fabric"
+
+
+@rsps_lib.activate
+def test_install_no_detection_warns(tmp_path, caplog):
+    import logging
+
+    zip_bytes = _make_zip({"mods/jei.jar": b"jar"})
+    rsps_lib.add(rsps_lib.GET, "https://example.com/pack.zip", body=zip_bytes)
+
+    session = build_session()
+    with caplog.at_level(logging.WARNING, logger="mc_helper.modpack.custom"):
+        _make_url_installer("https://example.com/pack.zip", session=session).install(tmp_path)
+
+    assert any("Could not detect" in r.message for r in caplog.records)
+
+    m = Manifest(tmp_path)
+    m.load()
+    assert m.mc_version is None
+    assert m.loader_type is None
+
+
+@rsps_lib.activate
+def test_install_config_override_beats_detection(tmp_path):
+    auto_install = "minecraftVersion=1.19.2\nloaderType=forge\nloaderVersion=43.0.0\n"
+    zip_bytes = _make_zip({"forge-auto-install.txt": auto_install.encode()})
+    rsps_lib.add(rsps_lib.GET, "https://example.com/pack.zip", body=zip_bytes)
+
+    source = UrlSource(url="https://example.com/pack.zip", mc_version="1.20.1", loader_type="forge")
+    modpack = ModpackConfig(platform="url", source=source)
+    session = build_session()
+    ServerPackInstaller(source, modpack, session=session, show_progress=False).install(tmp_path)
+
+    m = Manifest(tmp_path)
+    m.load()
+    assert m.mc_version == "1.20.1"
+    assert m.loader_type == "forge"
+
+
+@rsps_lib.activate
+def test_install_sha1_unchanged_populates_empty_manifest(tmp_path):
+    """SHA-1 short-circuit path populates version fields if previously unset."""
+    auto_install = "minecraftVersion=1.20.1\nloaderType=forge\nloaderVersion=47.4.13\n"
+    zip_bytes = _make_zip({"forge-auto-install.txt": auto_install.encode(), "mods/mod.jar": b"jar"})
+    sha1 = hashlib.sha1(zip_bytes).hexdigest()
+
+    # Pre-extract forge-auto-install.txt (as would exist from a prior run)
+    (tmp_path / "forge-auto-install.txt").write_text(auto_install)
+
+    # Manifest from old code: SHA-1 set but no mc_version
+    m = Manifest(tmp_path)
+    m.pack_sha1 = sha1
+    m.save()
+
+    rsps_lib.add(rsps_lib.GET, "https://example.com/pack.zip", body=zip_bytes)
+    session = build_session()
+    _make_url_installer("https://example.com/pack.zip", session=session).install(tmp_path)
+
+    m.load()
+    assert m.mc_version == "1.20.1"
+    assert m.loader_type == "forge"
+    assert m.loader_version == "47.4.13"
 
 
 @rsps_lib.activate
