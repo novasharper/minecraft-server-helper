@@ -7,6 +7,7 @@ from typing import Literal
 
 from importlib import resources
 
+
 def load_exclude_include(kind: Literal["cf", "mr"]) -> dict:
     """Load the bundled exclude/include filter file for CurseForge or Modrinth."""
     filename = "cf-exclude-include.json" if kind == "cf" else "modrinth-exclude-include.json"

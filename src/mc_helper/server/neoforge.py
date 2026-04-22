@@ -52,7 +52,7 @@ def _installer_url(minecraft_version: str, neoforge_version: str) -> str:
         ver = f"{minecraft_version}-{neoforge_version}"
     else:
         ver = neoforge_version
-    return f"{_MAVEN_BASE}/{_GROUP_PATH}/{artifact}" f"/{ver}/{artifact}-{ver}-installer.jar"
+    return f"{_MAVEN_BASE}/{_GROUP_PATH}/{artifact}/{ver}/{artifact}-{ver}-installer.jar"
 
 
 class NeoForgeInstaller(ServerInstaller):

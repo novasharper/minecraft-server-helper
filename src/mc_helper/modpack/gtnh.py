@@ -171,8 +171,7 @@ class GTNHPackInstaller:
         pack = _select_pack(packs, self.source.version, java_ver)
         if pack is None:
             raise RuntimeError(
-                f"No GTNH server pack found for version={self.source.version!r} "
-                f"and Java {java_ver}"
+                f"No GTNH server pack found for version={self.source.version!r} and Java {java_ver}"
             )
 
         log.info("Selected GTNH pack: %s", pack.release)

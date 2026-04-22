@@ -241,9 +241,9 @@ def _assert_server_artifact(output_dir: Path, pattern: str) -> None:
         matches = list(output_dir.glob(pattern))
         assert matches, f"expected server artifact {pattern!r} not found in {output_dir}"
     else:
-        assert (
-            output_dir / pattern
-        ).exists(), f"expected server artifact {pattern!r} not found in {output_dir}"
+        assert (output_dir / pattern).exists(), (
+            f"expected server artifact {pattern!r} not found in {output_dir}"
+        )
 
 
 # ── Server pack tests ─────────────────────────────────────────────────────────
