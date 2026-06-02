@@ -17,25 +17,59 @@ server:
   loader_version: LATEST
   output_dir: ./server
   eula: true
-  memory: 2G
   properties:
     difficulty: normal
     max-players: 20
     motd: "A Minecraft Server"
     online-mode: true
+  jvm:
+    memory: 2G
 ```
 
 | Field | Type | Default | Description |
 |---|---|---|---|
 | `type` | string | *(required unless `modpack` is set)* | Server type. One of `vanilla`, `fabric`, `forge`, `neoforge`, `paper`, `purpur`. When `modpack` is used, this field acts as a loader hint for mod-compatibility filtering; the actual loader is read from the pack metadata. |
-| `minecraft_version` | string | `LATEST` | Minecraft version, e.g. `1.21.1`, `LATEST`, or `SNAPSHOT`. Not used when `modpack` is set — the version comes from the pack. |
+| `minecraft_version` | string | *(unset → `LATEST`)* | Minecraft version, e.g. `1.21.1`, `LATEST`, or `SNAPSHOT`. When unset it resolves to the latest stable release. Not used when `modpack` is set — the version comes from the pack. |
 | `loader_version` | string | `LATEST` | Loader version for `fabric`, `forge`, or `neoforge`. Ignored for `vanilla`, `paper`, `purpur`. |
 | `output_dir` | path | `./server` | Directory where server files are installed. Created if it does not exist. |
 | `eula` | bool | `false` | Set to `true` to agree to the Minecraft EULA. Written to `eula.txt`. |
-| `memory` | string | `1G` | JVM heap size, e.g. `2G`, `512M`. Used in the generated `launch.sh`. |
 | `properties` | map | `{}` | Written verbatim to `server.properties`. Keys are the standard Minecraft property names (e.g. `difficulty`, `max-players`, `motd`). |
+| `server_args` | list[string] | `["nogui"]` | Arguments appended after the server JAR on the launch line (for `jar`-kind launches). |
+| `jvm` | map | *(see below)* | JVM/memory settings. See [`server.jvm`](#serverjvm). |
 
-`properties` keys map directly to `server.properties` entries. See the [Minecraft wiki](https://minecraft.wiki/w/Server.properties) for all valid keys; the canonical machine-readable mapping is `docker-minecraft-server/files/property-definitions.json` in the parent repository.
+`properties` keys map directly to `server.properties` entries — they are written exactly as given, so use the hyphenated Minecraft names (`max-players`, not `max_players`). See the [Minecraft wiki](https://minecraft.wiki/w/Server.properties) for all valid keys; the canonical machine-readable mapping is `docker-minecraft-server/files/property-definitions.json` in the parent repository.
+
+### `server.jvm`
+
+Controls heap size, the Java binary, and JVM flags written into the generated launch files.
+
+```yaml
+server:
+  jvm:
+    memory: 4G
+    java_bin: java
+    use_aikar_flags: true
+    args:
+      - "-XX:+UseG1GC"
+    dd_opts:
+      file.encoding: UTF-8
+```
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `memory` | string | `1G` | JVM heap size, e.g. `2G`, `512M`. Sets both `-Xms` and `-Xmx`. |
+| `java_bin` | string | `java` | Path/name of the Java executable used on the launch line. |
+| `args` | list[string] | `[]` | Extra raw JVM arguments, appended last. |
+| `xx_opts` | list[string] | `[]` | `-XX:` options (without the prefix; the leading `-XX:` is added for you). |
+| `opts` | list[string] | `[]` | Additional plain JVM options. |
+| `dd_opts` | map | `{}` | `-D<key>=<value>` system properties. |
+| `use_aikar_flags` | bool | `false` | Apply the Aikar G1GC flag bundle. |
+| `use_meowice_flags` | bool | `false` | Apply the MeowIce G1GC bundle (needs Java 17+; falls back to Aikar otherwise). |
+| `use_meowice_graalvm_flags` | bool | `false` | Apply the MeowIce GraalVM bundle. |
+| `use_flare_flags` | bool | `false` | Enable Flare profiling support. |
+| `use_simd_flags` | bool | `false` | Enable the Vector API (`jdk.incubator.vector`). |
+
+Flag composition order, auto-applied CVE/GTNH flags, and how flags land in `launch.sh` vs `user_jvm_args.txt` vs CurseForge settings files are described in [How It Works → Launch plans and JVM flags](how-it-works.md#launch-plans-and-jvm-flags).
 
 ---
 
@@ -62,7 +96,7 @@ modpack:
   source:
     project: "better-mc-fabric"
     version: LATEST
-  version_type: release
+    version_type: release
 ```
 
 ### Modrinth fields
@@ -70,7 +104,7 @@ modpack:
 | Field | Type | Default | Description |
 |---|---|---|---|
 | `platform` | string | *(required)* | Must be `modrinth`. |
-| `source.project` | string | *(required)* | Project slug, ID, or page URL. |
+| `source.project` | string | *(required)* | Project slug or ID. |
 | `source.version` | string | `LATEST` | Version ID or `LATEST`. |
 | `source.version_type` | string | `release` | Minimum acceptable stability: `release`, `beta`, or `alpha`. |
 
@@ -136,9 +170,10 @@ Exactly one of `github` or `url` must be used as the platform.
 
 #### Source: Direct URL (`platform: url`)
 
-| Field | Type | Description |
-|---|---|---|
-| `source.url` | string | Direct download URL for the archive. |
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `source.url` | string | *(required)* | Direct download URL for the archive. |
+| `source.token` | string | `null` | Bearer token sent with the download request, if the URL requires auth. |
 
 #### Shared server pack options
 
@@ -146,6 +181,7 @@ Exactly one of `github` or `url` must be used as the platform.
 |---|---|---|---|
 | `source.strip_components` | int | `0` | Strip N leading path segments during extraction. |
 | `source.force_update` | bool | `false` | Re-extract even if the SHA-1 matches. |
+| `source.start_artifact` | string | `null` | Explicit start script/JAR to launch. Auto-detected when omitted. |
 | `source.mc_version` | string | `null` | Manual override for detected Minecraft version. |
 | `source.loader_type` | string | `null` | Manual override for detected loader type. |
 | `source.loader_version` | string | `null` | Manual override for detected loader version. |
@@ -205,8 +241,9 @@ Any `${VAR}` reference in the YAML is replaced with the value of the named envir
 
 ```yaml
 modpack:
-  api_key: ${CF_API_KEY}
-  token: ${GITHUB_TOKEN}
+  source:
+    api_key: ${CF_API_KEY}
+    token: ${GITHUB_TOKEN}
 ```
 
 If a referenced variable is not set, `mc-helper` exits immediately with an error listing the missing variable name.

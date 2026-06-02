@@ -8,12 +8,15 @@ server:
   loader_version: LATEST        # fabric/forge/neoforge only; ignored for vanilla/paper/purpur
   output_dir: ./server
   eula: true
-  memory: 2G
-  properties:                   # written verbatim to server.properties
+  properties:                   # written verbatim to server.properties (use hyphenated keys)
     difficulty: normal
-    max_players: 20
+    max-players: 20
     motd: "A Minecraft Server"
-    online_mode: true
+    online-mode: true
+  jvm:
+    memory: 2G                  # JVM heap (-Xms/-Xmx); default 1G
+    # use_aikar_flags: true     # opt-in G1GC bundle; see docs/how-it-works.md
+    # args: ["-XX:+UseG1GC"]    # extra raw JVM args (appended last)
 
 # ── Option A: Install a modpack ───────────────────────────────────────────────
 modpack:
@@ -21,7 +24,7 @@ modpack:
 
   # ── Modrinth source ──
   source:
-    project: "better-mc-fabric" # slug, project ID, page URL, or local .mrpack path
+    project: "better-mc-fabric" # Modrinth project slug or ID
     version: LATEST
     version_type: release       # release | beta | alpha
 

@@ -113,7 +113,8 @@ Any `${VAR}` reference in the config is replaced with the corresponding environm
 ```yaml
 modpack:
   platform: curseforge
-  api_key: ${CF_API_KEY}
+  source:
+    api_key: ${CF_API_KEY}
 ```
 
 If the referenced variable is not set, `mc-helper` exits with an error.
