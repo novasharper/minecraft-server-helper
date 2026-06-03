@@ -46,7 +46,7 @@ jobs:
           - os: ubuntu-24.04
             platform: linux-x86_64
           - os: ubuntu-24.04-arm
-            platform: linux-arm64
+            platform: linux-aarch64
           - os: macos-latest
             platform: macos
           - os: windows-latest
@@ -104,6 +104,13 @@ jobs:
           REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
+          
+          # Force update tag
+          gh api -X PATCH repos/{owner}/{repo}/git/refs/tags/nightly \
+            -f sha="$GITHUB_SHA" -F force=true || \
+          gh api -X POST repos/{owner}/{repo}/git/refs \
+            -f ref="refs/tags/nightly" -f sha="$GITHUB_SHA"
+
           gh release create nightly --repo "$REPO" --prerelease \
             --title "Nightly Build" \
             --notes "Latest nightly build. Automatically updated on each commit." \
