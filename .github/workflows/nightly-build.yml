@@ -107,7 +107,7 @@ jobs:
           
           # Force update tag
           gh api -X PATCH "repos/$REPO/git/refs/tags/nightly" \
-            -f sha="$GITHUB_SHA" -f force=true || \
+            -f sha="$GITHUB_SHA" -F force=true || \
           gh api -X POST "repos/$REPO/git/refs" \
             -f ref="refs/tags/nightly" -f sha="$GITHUB_SHA"
 
